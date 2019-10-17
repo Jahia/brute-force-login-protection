@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<content xmlns:j="http://www.jahia.org/jahia/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0">
+    <modules jcr:primaryType="jnt:modules">
+        <brute-force-login-protection j:dependencies="default serverSettings"
+                                      j:installedModules="brute-force-login-protection"
+                                      j:modulePriority="0"
+                                      j:moduleType="module"
+                                      j:title="Brute force login protection"
+                                      jcr:primaryType="jnt:module">                
+            <portlets jcr:primaryType="jnt:portletFolder"/>
+            <files jcr:primaryType="jnt:folder"/>
+            <contents jcr:primaryType="jnt:contentFolder"/>
+            <templates j:rootTemplatePath="/" jcr:primaryType="jnt:templatesFolder">
+                <files jcr:primaryType="jnt:folder">
+                    <serveradmin jcr:primaryType="jnt:folder">
+                        <bruteForceLoginProtection.png j:height="16"
+                                                       j:width="16"
+                                                       jcr:mixinTypes="jmix:image"
+                                                       jcr:primaryType="jnt:file">
+                            <jcr:content jcr:mimeType="image/png" jcr:primaryType="jnt:resource"/>
+                        </bruteForceLoginProtection.png>
+                    </serveradmin>
+                </files>
+                <contents jcr:primaryType="jnt:contentFolder"/>
+                <server-settings-base j:view="serverSettings"
+                                      jcr:mixinTypes="jmix:useUILocale"
+                                      jcr:primaryType="jnt:template">
+                    <configurations j:hiddenTemplate="false"
+                                    j:icon="/modules/serverSettings/templates/files/serveradmin/configurations/configurations.png"
+                                    j:titleKey="serverSettings.configurations"
+                                    jcr:mixinTypes="jmix:rbTitle"
+                                    jcr:primaryType="jnt:template">
+                        <bruteForceLoginProtection j:applyOn="jnt:globalSettings"
+                                                   j:defaultTemplate="false"
+                                                   j:hiddenTemplate="false"
+                                                   j:icon="/modules/brute-force-login-protection/templates/files/serveradmin/bruteForceLoginProtection.png"
+                                                   j:requiredPermissionNames="administrationAccess"
+                                                   j:titleKey="bruteForceLoginProtection.title"
+                                                   jcr:mixinTypes="jmix:rbTitle"
+                                                   jcr:primaryType="jnt:contentTemplate">
+                            <pagecontent jcr:primaryType="jnt:contentList">
+                                <brute-force-login-protection jcr:primaryType="jnt:serverSettingsBruteForceLoginProtection"/>
+                            </pagecontent>
+                        </bruteForceLoginProtection>
+                    </configurations>
+                </server-settings-base>
+            </templates>
+        </brute-force-login-protection>
+    </modules>
+</content>

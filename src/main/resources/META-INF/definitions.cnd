@@ -1,0 +1,12 @@
+<jnt = 'http://www.jahia.org/jahia/nt/1.0'>
+<jmix = 'http://www.jahia.org/jahia/mix/1.0'>
+
+[jnt:bruteForceLoginProtection] > jnt:content, jmix:autoPublish
+ - whitelist_ips (string)
+ - activated (boolean)
+
+//---------------------------------------------------------
+// Brute Force Login Administration
+//---------------------------------------------------------
+
+[jnt:serverSettingsBruteForceLoginProtection] > jnt:content, mix:title, jmix:studioOnly, jmix:siteComponent
