@@ -70,7 +70,9 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
                         if (LOGGER.isInfoEnabled()) {
                             LOGGER.info(String.format("The IP %s has tried to much unsuccessful logins, preventing any further tried", remoteAddress).replaceAll("[\r\n]", ""));
                         }
-                        if (mailService.isEnabled()) {
+                        if (!ipCacheEntry.isNotificationSent() && mailService.isEnabled()) {
+                            ipCacheEntry.setNotificationSent(true);
+                            ipCacheManager.cacheIp(ipCacheEntry);
                             final String serverName = request.getServerName();
                             final String sender = mailService.defaultSender();
                             final String recipient = mailService.defaultRecipient();

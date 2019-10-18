@@ -11,6 +11,7 @@ public class IpCacheEntry extends IpAbstractCacheEntry implements Serializable {
 
     private static final long serialVersionUID = -1432235243384204528L;
     private int nbFailedLogins;
+    private boolean notificationSent;
 
     public IpCacheEntry(String ip) {
         setIp(ip);
@@ -24,4 +25,11 @@ public class IpCacheEntry extends IpAbstractCacheEntry implements Serializable {
         this.nbFailedLogins = nbFailedLogins;
     }
 
+    public boolean isNotificationSent() {
+        return notificationSent;
+    }
+
+    public void setNotificationSent(boolean notificationSent) {
+        this.notificationSent = notificationSent;
+    }
 }
