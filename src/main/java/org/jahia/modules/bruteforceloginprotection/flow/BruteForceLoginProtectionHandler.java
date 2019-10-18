@@ -5,6 +5,10 @@ import javax.jcr.RepositoryException;
 import org.apache.commons.lang.StringUtils;
 import org.apache.jackrabbit.commons.webdav.JcrRemotingConstants;
 import org.apache.jackrabbit.core.fs.FileSystem;
+import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
+import org.jahia.registries.ServicesRegistry;
+import org.jahia.services.cache.CacheHelper;
+import org.jahia.services.cache.CacheService;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.decorator.JCRSiteNode;
@@ -44,6 +48,7 @@ public class BruteForceLoginProtectionHandler implements Serializable {
                     bruteForceLoginProtectionNode.setProperty(PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax);
                 }
                 session.save();
+                CacheHelper.flushEhcacheByName(BruteForceLoginProtectionCacheManager.BRUTE_FORCE_LOGIN_PROTECTION_CACHE, true);
             } else if (LOGGER.isInfoEnabled()) {
                 LOGGER.info(String.format("The node %s does not exist, impossible to save", NODE_PATH));
             }
