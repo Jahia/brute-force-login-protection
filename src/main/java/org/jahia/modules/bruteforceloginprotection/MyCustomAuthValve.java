@@ -36,7 +36,6 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
     private static final String LOGIN_URI = "/cms/login";
-    private static final int NB_MAX_FAILED_LOGIN = 6;
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd 'at' HH:mm:ss z");
     private MailService mailService;
     private IpCacheManager ipCacheManager;
@@ -51,7 +50,7 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
             final String remoteAddress = retrieveRemoteAddress(request);
 
             final IpCacheEntry ipCacheEntry = ipCacheManager.getCacheEntryByIp(remoteAddress);
-            if (ipCacheEntry != null && ipCacheEntry.getNbFailedLogins() >= NB_MAX_FAILED_LOGIN) {
+            if (ipCacheEntry != null) {
                 try {
                     final boolean toBlock = JCRTemplate.getInstance().doExecuteWithSystemSessionAsUser(null, null, null, new JCRCallback<Boolean>() {
 
@@ -59,10 +58,11 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
                         public Boolean doInJCR(JCRSessionWrapper session) throws RepositoryException {
                             final JCRNodeWrapper bruteForceLoginProtectionNode = session.getNode(BruteForceLoginProtectionHandler.NODE_PATH);
                             final String whiteListIpsStr = bruteForceLoginProtectionNode.getPropertyAsString(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
+                            final Long nbFailedLoginMax = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getLong();
                             final List<SubnetUtils> whitelistIps = getSubnetUtilsList(whiteListIpsStr);
 
                             return bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getBoolean()
-                                    && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true);
+                                    && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
                         }
                     });
 

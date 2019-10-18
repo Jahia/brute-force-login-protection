@@ -9,7 +9,7 @@
 
     <view-state id="bruteForceLoginProtection">
         <on-render>
-            <evaluate expression="flowHandler.getWhitelistIps(flowRequestContext)" result="requestScope.bruteForceLoginProtection"/>
+            <evaluate expression="flowHandler.getBruteForceLoginProtectionNode(flowRequestContext)" result="requestScope.bruteForceLoginProtection"/>
         </on-render>
         <transition on="submitBruteForceLoginProtectionSettings" to="bruteForceLoginProtection">
             <evaluate expression="flowHandler.store(flowRequestContext)"/>

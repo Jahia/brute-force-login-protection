@@ -4,6 +4,7 @@
 [jnt:bruteForceLoginProtection] > jnt:content, jmix:autoPublish
  - whitelist_ips (string)
  - activated (boolean)
+ - nb_failed_login_max (long) = 6
 
 //---------------------------------------------------------
 // Brute Force Login Administration

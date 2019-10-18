@@ -18,8 +18,10 @@ public class BruteForceLoginProtectionHandler implements Serializable {
     private static final long serialVersionUID = -6552768415414069547L;
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionHandler.class);
     private static final String NODE_TYPE = "jnt:bruteForceLoginProtection";
-    public static final String PROPERTY_WHITELIST_IPS = "whitelist_ips";
+    private static final long NB_MAX_FAILED_LOGIN = 6L;
     public static final String PROPERTY_ACTIVATED = "activated";
+    public static final String PROPERTY_NB_FAILED_LOGIN_MAX = "nb_failed_login_max";
+    public static final String PROPERTY_WHITELIST_IPS = "whitelist_ips";
     public static final String NODE_NAME = "bruteforceloginprotection";
     public static final String NODE_SETTINGS_PATH = JcrRemotingConstants.ROOT_ITEM_PATH + "settings";
     public static final String NODE_PATH = NODE_SETTINGS_PATH + FileSystem.SEPARATOR + NODE_NAME;
@@ -33,9 +35,13 @@ public class BruteForceLoginProtectionHandler implements Serializable {
                 final JCRNodeWrapper bruteForceLoginProtectionNode = settingsNode.getNode(NODE_NAME);
                 final String activatedStr = ctx.getRequestParameters().get(PROPERTY_ACTIVATED);
                 final String whiteListIps = ctx.getRequestParameters().get(PROPERTY_WHITELIST_IPS);
+                final Integer nbFailedLoginMax = ctx.getRequestParameters().getInteger(PROPERTY_NB_FAILED_LOGIN_MAX);
                 bruteForceLoginProtectionNode.setProperty(PROPERTY_ACTIVATED, activatedStr != null);
                 if (!StringUtils.isEmpty(whiteListIps)) {
                     bruteForceLoginProtectionNode.setProperty(PROPERTY_WHITELIST_IPS, whiteListIps);
+                }
+                if (nbFailedLoginMax != null) {
+                    bruteForceLoginProtectionNode.setProperty(PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax);
                 }
                 session.save();
             } else if (LOGGER.isInfoEnabled()) {
@@ -46,7 +52,7 @@ public class BruteForceLoginProtectionHandler implements Serializable {
         }
     }
 
-    public JCRNodeWrapper getWhitelistIps(RequestContext ctx) {
+    public JCRNodeWrapper getBruteForceLoginProtectionNode(RequestContext ctx) {
         JCRNodeWrapper bruteForceLoginProtectionNode = null;
         try {
             final JCRSiteNode currentSite = getRenderContext(ctx).getSite();
@@ -58,6 +64,7 @@ public class BruteForceLoginProtectionHandler implements Serializable {
                 bruteForceLoginProtectionNode = settingsNode.addNode(NODE_NAME, NODE_TYPE);
                 bruteForceLoginProtectionNode.setProperty(PROPERTY_WHITELIST_IPS, "127.0.0.1/32");
                 bruteForceLoginProtectionNode.setProperty(PROPERTY_ACTIVATED, false);
+                bruteForceLoginProtectionNode.setProperty(PROPERTY_NB_FAILED_LOGIN_MAX, NB_MAX_FAILED_LOGIN);
                 session.save();
             }
         } catch (RepositoryException ex) {

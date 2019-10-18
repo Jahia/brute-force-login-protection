@@ -54,6 +54,14 @@
                 </div>
             </div>
 
+            <div class="control-group" id="group-nbFailedLoginMax" data-error="<fmt:message key="bruteForceLoginProtection.errors.nb_failed_login_max"/>">
+            <label class="control-label"><fmt:message key="bruteForceLoginProtection.nbFailedLoginMax"/>&nbsp;:</label>
+            <div class="controls">
+                <c:set var="nb_failed_login_max" value="${bruteForceLoginProtection.properties['nb_failed_login_max']}"/>
+                <input type="text" name="nb_failed_login_max" id="nbFailedLoginMax" value="${nb_failed_login_max}"/>
+                </div>
+            </div>
+
             <div class="control-group" id="group-to" data-error="<fmt:message key="bruteForceLoginProtection.errors.whitelistIps"/>">
             <label class="control-label"><fmt:message key="label.whitelist"/>&nbsp;:</label>
             <div class="controls">
