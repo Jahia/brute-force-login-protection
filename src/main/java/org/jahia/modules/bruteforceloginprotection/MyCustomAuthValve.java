@@ -9,8 +9,9 @@ import javax.jcr.RepositoryException;
 import javax.servlet.http.HttpServletRequest;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
+import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
 import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
-import org.jahia.modules.bruteforceloginprotection.cache.IpCacheManager;
+import org.jahia.modules.bruteforceloginprotection.cache.SettingCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.flow.BruteForceLoginProtectionHandler;
 import org.jahia.params.valves.AuthValveContext;
 import org.jahia.params.valves.AutoRegisteredBaseAuthValve;
@@ -20,10 +21,10 @@ import org.jahia.pipelines.valves.ValveContext;
 import org.jahia.services.content.JCRCallback;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
+import org.jahia.services.content.JCRTemplate;
 import org.jahia.services.mail.MailService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jahia.services.content.JCRTemplate;
 
 /**
  *
@@ -38,7 +39,7 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
     private static final String LOGIN_URI = "/cms/login";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd 'at' HH:mm:ss z");
     private MailService mailService;
-    private IpCacheManager ipCacheManager;
+    private BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager;
 
     @Override
     public void invoke(Object context, ValveContext valveContext) throws PipelineException {
@@ -49,20 +50,36 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
         if (LOGIN_URI.equals(requestURI)) {
             final String remoteAddress = retrieveRemoteAddress(request);
 
-            final IpCacheEntry ipCacheEntry = ipCacheManager.getCacheEntryByIp(remoteAddress);
+            final IpCacheEntry ipCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByIp(remoteAddress);
             if (ipCacheEntry != null) {
                 try {
                     final boolean toBlock = JCRTemplate.getInstance().doExecuteWithSystemSessionAsUser(null, null, null, new JCRCallback<Boolean>() {
 
                         @Override
                         public Boolean doInJCR(JCRSessionWrapper session) throws RepositoryException {
-                            final JCRNodeWrapper bruteForceLoginProtectionNode = session.getNode(BruteForceLoginProtectionHandler.NODE_PATH);
-                            final String whiteListIpsStr = bruteForceLoginProtectionNode.getPropertyAsString(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
-                            final Long nbFailedLoginMax = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getLong();
-                            final List<SubnetUtils> whitelistIps = getSubnetUtilsList(whiteListIpsStr);
+                            final String whiteListIpsStr;
+                            final Long nbFailedLoginMax;
+                            final Boolean activated;
+                            final SettingCacheEntry whitelistIpsCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
+                            final SettingCacheEntry nbFailedLoginMaxCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX);
+                            final SettingCacheEntry activatedCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED);
 
-                            return bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getBoolean()
-                                    && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
+                            if (whitelistIpsCacheEntry == null || nbFailedLoginMaxCacheEntry == null || activatedCacheEntry == null) {
+                                final JCRNodeWrapper bruteForceLoginProtectionNode = session.getNode(BruteForceLoginProtectionHandler.NODE_PATH);
+                                whiteListIpsStr = bruteForceLoginProtectionNode.getPropertyAsString(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
+                                nbFailedLoginMax = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getLong();
+                                activated = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getBoolean();
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS, whiteListIpsStr));
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax));
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED, activated));
+                            } else {
+                                whiteListIpsStr = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS).getValue().toString();
+                                nbFailedLoginMax = (Long) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getValue();
+                                activated = (Boolean) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getValue();
+                            }
+
+                            final List<SubnetUtils> whitelistIps = getSubnetUtilsList(whiteListIpsStr);
+                            return activated && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
                         }
                     });
 
@@ -72,7 +89,7 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
                         }
                         if (!ipCacheEntry.isNotificationSent() && mailService.isEnabled()) {
                             ipCacheEntry.setNotificationSent(true);
-                            ipCacheManager.cacheIp(ipCacheEntry);
+                            bruteForceLoginProtectionCacheManager.cacheIp(ipCacheEntry);
                             final String serverName = request.getServerName();
                             final String sender = mailService.defaultSender();
                             final String recipient = mailService.defaultRecipient();
@@ -111,8 +128,8 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
         this.mailService = mailService;
     }
 
-    public void setIpCacheManager(IpCacheManager ipCacheManager) {
-        this.ipCacheManager = ipCacheManager;
+    public void setBruteForceLoginProtectionCacheManager(BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager) {
+        this.bruteForceLoginProtectionCacheManager = bruteForceLoginProtectionCacheManager;
     }
 
     private void checkAuthValveResult(HttpServletRequest request) {
@@ -126,14 +143,14 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
                 site = "systemsite";
             }
 
-            IpCacheEntry ipCacheEntry = ipCacheManager.getCacheEntryByIp(remoteAddress);
+            IpCacheEntry ipCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByIp(remoteAddress);
             if (ipCacheEntry == null) {
                 ipCacheEntry = new IpCacheEntry(remoteAddress);
             }
 
             int nbFailedLogins = ipCacheEntry.getNbFailedLogins() + 1;
             ipCacheEntry.setNbFailedLogins(nbFailedLogins);
-            ipCacheManager.cacheIp(ipCacheEntry);
+            bruteForceLoginProtectionCacheManager.cacheIp(ipCacheEntry);
 
             final String serverName = request.getServerName();
             final Date loginDate = new Date();
