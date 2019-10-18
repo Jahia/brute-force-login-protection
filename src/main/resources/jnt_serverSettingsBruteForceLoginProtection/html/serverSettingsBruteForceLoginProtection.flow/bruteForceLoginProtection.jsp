@@ -59,10 +59,10 @@
             <div class="controls">
                 <c:set var="nb_failed_login_max" value="${bruteForceLoginProtection.properties['nb_failed_login_max']}"/>
                 <input type="text" name="nb_failed_login_max" id="nbFailedLoginMax" value="${nb_failed_login_max}"/>
-                </div>
             </div>
+        </div>
 
-            <div class="control-group" id="group-to" data-error="<fmt:message key="bruteForceLoginProtection.errors.whitelistIps"/>">
+        <div class="control-group" id="group-to" data-error="<fmt:message key="bruteForceLoginProtection.errors.whitelistIps"/>">
             <label class="control-label"><fmt:message key="label.whitelist"/>&nbsp;:</label>
             <div class="controls">
                 <c:set var="whitelist_ips" value="${bruteForceLoginProtection.properties['whitelist_ips']}"/>
@@ -77,6 +77,17 @@
                 <button class="btn btn-primary" type="submit">
                     <i class="icon-${'share'} icon-white"></i>
                     &nbsp;<fmt:message key="label.${'update'}"/>
+                </button>
+            </div>
+        </div>
+    </form>
+    <form class="form-horizontal" id="bruteForceLoginProtectionSettings" name="bruteForceLoginProtectionSettings" action='${flowExecutionUrl}' method="post">
+        <input type="hidden" name="_eventId" value="flushBruteForceLoginProtectionSettings"/>
+        <div class="control-group">
+            <div class="controls">
+                <button class="btn btn-primary" type="submit">
+                    <i class="icon-${'share'} icon-white"></i>
+                    &nbsp;<fmt:message key="label.${'flush'}"/>
                 </button>
             </div>
         </div>

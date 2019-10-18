@@ -15,10 +15,9 @@
             <evaluate expression="flowHandler.store(flowRequestContext)"/>
             <set name="flowScope.settingsUpdated" value="true" type="java.lang.Boolean"/>
         </transition>
-    </view-state>
-    
-    <action-state id="flushCache">
-        <evaluate expression="flowHandler.flushCache()" />
-    </action-state>
-    
+        <transition on="flushBruteForceLoginProtectionSettings" to="bruteForceLoginProtection">
+            <evaluate expression="flowHandler.flushCache()"/>
+            <set name="flowScope.cacheFlushed" value="true" type="java.lang.Boolean"/>
+        </transition>
+    </view-state>    
 </flow>
