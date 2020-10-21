@@ -8,7 +8,7 @@
     </parent>
     <groupId>org.jahia.modules</groupId>
     <artifactId>brute-force-login-protection</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>2.0.0</version>
     <packaging>bundle</packaging>
     <name>Brute force login protection</name>
     <description>This is the custom module (Brute force login protection) for running on a Digital Experience Manager server.</description>
@@ -16,7 +16,7 @@
         <connection>scm:git:git@github.com:Jahia/brute-force-login-protection.git</connection>
         <developerConnection>scm:git:git@github.com:Jahia/brute-force-login-protection.git</developerConnection>
         <url>https://github.com/Jahia/brute-force-login-protection</url>
-        <tag>HEAD</tag>
+        <tag>2_0_0</tag>
     </scm>
     <properties>
         <jahia-depends>default,siteSettings,tabularList,serverSettings</jahia-depends>
