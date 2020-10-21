@@ -23,7 +23,7 @@ public class BruteForceLoginProtectionCacheManager {
     public static final String BRUTE_FORCE_LOGIN_PROTECTION_CACHE = "BruteForceLoginProtectionCache";
     private Ehcache bruteForceLoginProtectionCache;
 
-    protected void start() {
+    public void start() {
         final EhCacheProvider cacheProvider = (EhCacheProvider) SpringContextSingleton.getInstance().getContext().getBean("ehCacheProvider");
         final CacheManager cacheManager = cacheProvider.getCacheManager();
         bruteForceLoginProtectionCache = cacheManager.getCache(BRUTE_FORCE_LOGIN_PROTECTION_CACHE);
@@ -34,7 +34,7 @@ public class BruteForceLoginProtectionCacheManager {
         }
     }
 
-    protected void stop() {
+    public void stop() {
         // flush
         if (bruteForceLoginProtectionCache != null) {
             bruteForceLoginProtectionCache.removeAll();

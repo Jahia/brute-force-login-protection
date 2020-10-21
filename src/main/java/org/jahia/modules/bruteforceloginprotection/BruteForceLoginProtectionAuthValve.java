@@ -14,8 +14,9 @@ import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.cache.SettingCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.flow.BruteForceLoginProtectionHandler;
 import org.jahia.params.valves.AuthValveContext;
-import org.jahia.params.valves.AutoRegisteredBaseAuthValve;
+import org.jahia.params.valves.BaseAuthValve;
 import org.jahia.params.valves.LoginEngineAuthValveImpl;
+import org.jahia.pipelines.Pipeline;
 import org.jahia.pipelines.PipelineException;
 import org.jahia.pipelines.valves.ValveContext;
 import org.jahia.services.content.JCRCallback;
@@ -30,16 +31,37 @@ import org.slf4j.LoggerFactory;
  *
  * @author fbourasse
  */
-public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
+public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
 
     private static final long serialVersionUID = -6551768415414069547L;
-    private static final Logger LOGGER = LoggerFactory.getLogger(MyCustomAuthValve.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionAuthValve.class);
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
     private static final String LOGIN_URI = "/cms/login";
+    public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd 'at' HH:mm:ss z");
-    private MailService mailService;
+    private final MailService mailService;
     private BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager;
+    private Pipeline authPipeline;
+
+    public void setAuthPipeline(Pipeline authPipeline) {
+        this.authPipeline = authPipeline;
+    }
+
+    public BruteForceLoginProtectionAuthValve() {
+        super();
+        mailService = MailService.getInstance();
+    }
+
+    public void start() {
+        setId(BruteForceLoginProtectionAuthValve.AUTH_VALVE_ID);
+        removeValve(authPipeline);
+        addValve(authPipeline, 0, null, null);
+    }
+
+    public void stop() {
+        removeValve(authPipeline);
+    }
 
     @Override
     public void invoke(Object context, ValveContext valveContext) throws PipelineException {
@@ -122,10 +144,6 @@ public final class MyCustomAuthValve extends AutoRegisteredBaseAuthValve {
             checkAuthValveResult(request);
         }
 
-    }
-
-    public void setMailService(MailService mailService) {
-        this.mailService = mailService;
     }
 
     public void setBruteForceLoginProtectionCacheManager(BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager) {

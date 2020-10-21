@@ -4,11 +4,11 @@
     <parent>
         <groupId>org.jahia.modules</groupId>
         <artifactId>jahia-modules</artifactId>
-        <version>7.3.1.0</version>
+        <version>8.0.1.0</version>
     </parent>
     <groupId>org.jahia.modules</groupId>
     <artifactId>brute-force-login-protection</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
     <packaging>bundle</packaging>
     <name>Brute force login protection</name>
     <description>This is the custom module (Brute force login protection) for running on a Digital Experience Manager server.</description>
@@ -16,12 +16,14 @@
         <connection>scm:git:git@github.com:Jahia/brute-force-login-protection.git</connection>
         <developerConnection>scm:git:git@github.com:Jahia/brute-force-login-protection.git</developerConnection>
         <url>https://github.com/Jahia/brute-force-login-protection</url>
-      <tag>HEAD</tag>
-  </scm>
+        <tag>HEAD</tag>
+    </scm>
     <properties>
-        <jahia-deploy-on-site>system</jahia-deploy-on-site>
-        <jahia-module-type>system</jahia-module-type>
         <jahia-depends>default,siteSettings,tabularList,serverSettings</jahia-depends>
+        <jahia-deploy-on-site>system</jahia-deploy-on-site>
+        <jahia-module-signature>MCwCFGGyKzlso//N9zTQHrCfCnj+3jLQAhQELgRJpttHSd083nWFuwDGZzuocQ==</jahia-module-signature>
+        <jahia-module-type>system</jahia-module-type>
+        <require-capability>osgi.extender;filter:="(osgi.extender=org.jahia.bundles.blueprint.extender.config)"</require-capability>
     </properties>
     <repositories>
         <repository>
