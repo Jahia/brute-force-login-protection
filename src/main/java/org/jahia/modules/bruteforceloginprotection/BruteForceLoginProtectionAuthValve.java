@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  *
- * @author fbourasse
+ * @author fbourasseaaaaa
  */
 public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
 
