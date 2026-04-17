@@ -80,7 +80,7 @@ public class BruteForceLoginProtectionMutationExtension {
         }
         JCRNodeWrapper settingsRoot = session.getNode(BruteForceLoginProtectionConstants.NODE_SETTINGS_PATH);
         JCRNodeWrapper node = settingsRoot.addNode(BruteForceLoginProtectionConstants.NODE_NAME, "jnt:bruteForceLoginProtection");
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, "127.0.0.1/32");
+        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, "127.0.0.1/32,::1/128");
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, false);
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, 6L);
         return node;

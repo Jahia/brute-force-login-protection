@@ -14,7 +14,7 @@ export const BruteForceLoginProtectionAdmin = () => {
     const [formState, setFormState] = useState({
         activated: false,
         nbFailedLoginMax: 6,
-        whitelistIps: '127.0.0.1/32'
+        whitelistIps: '127.0.0.1/32,::1/128'
     });
 
     const {loading} = useQuery(GET_SETTINGS, {

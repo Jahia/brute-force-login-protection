@@ -46,7 +46,7 @@ public class BruteForceLoginProtectionQueryExtension {
                                     : 6;
                             String whitelistIps = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS)
                                     ? node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS).getString()
-                                    : "127.0.0.1/32";
+                                    : "127.0.0.1/32,::1/128";
                             return new GqlSettings(activated, nbFailedLoginMax, whitelistIps);
                         } catch (RepositoryException e) {
                             LOGGER.error("Error reading brute force login protection settings", e);
@@ -74,7 +74,7 @@ public class BruteForceLoginProtectionQueryExtension {
         }
 
         public static GqlSettings defaults() {
-            return new GqlSettings(false, 6, "127.0.0.1/32");
+            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128");
         }
 
         @GraphQLField

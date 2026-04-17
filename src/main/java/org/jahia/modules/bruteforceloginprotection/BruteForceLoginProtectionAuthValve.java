@@ -8,7 +8,6 @@ import java.util.List;
 import javax.jcr.RepositoryException;
 import javax.servlet.http.HttpServletRequest;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.net.util.SubnetUtils;
 import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
 import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.cache.SettingCacheEntry;
@@ -100,7 +99,7 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
                                 activated = (Boolean) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED).getValue();
                             }
 
-                            final List<SubnetUtils> whitelistIps = getSubnetUtilsList(whiteListIpsStr);
+                            final List<CidrMatcher> whitelistIps = getCidrMatcherList(whiteListIpsStr);
                             return activated && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
                         }
                     });
@@ -186,40 +185,34 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
         return remoteAddress;
     }
 
-    private static boolean isRemoteAddressWhitelisted(String remoteAddress, List<SubnetUtils> whitelistIps, boolean useFirstRemoteAddress) {
-        boolean isInRange = false;
-        int index = 0;
+    private static boolean isRemoteAddressWhitelisted(String remoteAddress, List<CidrMatcher> whitelistIps, boolean useFirstRemoteAddress) {
         final String[] remoteAddresses = remoteAddress.split(KEY_SEPARATOR);
-        final String remoteAddressToCheck;
-        if (useFirstRemoteAddress) {
-            remoteAddressToCheck = remoteAddresses[0];
-        } else {
-            remoteAddressToCheck = remoteAddresses[remoteAddresses.length - 1];
-        }
-        while (!isInRange && index < whitelistIps.size()) {
-            final SubnetUtils utils = whitelistIps.get(index);
-            try {
-                isInRange = utils.getInfo().isInRange(remoteAddressToCheck);
-            } catch (IllegalArgumentException ex) {
-                LOGGER.warn("Impossible to check remote address", ex);
+        final String remoteAddressToCheck = useFirstRemoteAddress
+                ? remoteAddresses[0].trim()
+                : remoteAddresses[remoteAddresses.length - 1].trim();
+        for (CidrMatcher matcher : whitelistIps) {
+            if (matcher.matches(remoteAddressToCheck)) {
+                return true;
             }
-            index++;
         }
-        return isInRange;
+        return false;
     }
 
-    private static List<SubnetUtils> getSubnetUtilsList(String whitelistIps) {
+    private static List<CidrMatcher> getCidrMatcherList(String whitelistIps) {
         if (StringUtils.isBlank(whitelistIps)) {
             return Collections.emptyList();
         }
-        final List<SubnetUtils> subnets = new ArrayList<>();
+        final List<CidrMatcher> matchers = new ArrayList<>();
         for (String subnet : StringUtils.split(whitelistIps, KEY_SEPARATOR)) {
-            if (StringUtils.isNotEmpty(subnet)) {
-                final SubnetUtils subnetUtils = new SubnetUtils(subnet);
-                subnetUtils.setInclusiveHostCount(true);
-                subnets.add(subnetUtils);
+            final String trimmed = StringUtils.trimToNull(subnet);
+            if (trimmed != null) {
+                try {
+                    matchers.add(new CidrMatcher(trimmed));
+                } catch (IllegalArgumentException ex) {
+                    LOGGER.warn("Ignoring invalid CIDR entry in whitelist: {}", trimmed, ex);
+                }
             }
         }
-        return subnets;
+        return matchers;
     }
 }
