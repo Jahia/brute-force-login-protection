@@ -23,6 +23,10 @@ import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.JCRTemplate;
 import org.jahia.services.mail.MailService;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +34,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author fbourasse
  */
+@Component(service = {}, immediate = true)
 public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
 
     private static final long serialVersionUID = -6551768415414069547L;
@@ -40,24 +45,26 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd 'at' HH:mm:ss z");
     private final MailService mailService;
-    private BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager;
-    private Pipeline authPipeline;
 
-    public void setAuthPipeline(Pipeline authPipeline) {
-        this.authPipeline = authPipeline;
-    }
+    @Reference
+    private BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager;
+
+    @Reference(target = "(type=authentication)")
+    private Pipeline authPipeline;
 
     public BruteForceLoginProtectionAuthValve() {
         super();
         mailService = MailService.getInstance();
     }
 
+    @Activate
     public void start() {
         setId(BruteForceLoginProtectionAuthValve.AUTH_VALVE_ID);
         removeValve(authPipeline);
         addValve(authPipeline, 0, null, null);
     }
 
+    @Deactivate
     public void stop() {
         removeValve(authPipeline);
     }
@@ -143,10 +150,6 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
             checkAuthValveResult(request);
         }
 
-    }
-
-    public void setBruteForceLoginProtectionCacheManager(BruteForceLoginProtectionCacheManager bruteForceLoginProtectionCacheManager) {
-        this.bruteForceLoginProtectionCacheManager = bruteForceLoginProtectionCacheManager;
     }
 
     private void checkAuthValveResult(HttpServletRequest request) {

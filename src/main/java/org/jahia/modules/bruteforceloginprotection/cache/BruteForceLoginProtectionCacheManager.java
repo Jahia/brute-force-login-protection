@@ -11,6 +11,9 @@ import org.jahia.services.SpringContextSingleton;
 import org.jahia.services.cache.CacheHelper;
 import org.jahia.services.cache.ModuleClassLoaderAwareCacheEntry;
 import org.jahia.services.cache.ehcache.EhCacheProvider;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,6 +21,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author fbourasse
  */
+@Component(service = BruteForceLoginProtectionCacheManager.class, immediate = true)
 public class BruteForceLoginProtectionCacheManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionCacheManager.class);
@@ -25,6 +29,7 @@ public class BruteForceLoginProtectionCacheManager {
     public static final String BRUTE_FORCE_LOGIN_PROTECTION_CACHE = "BruteForceLoginProtectionCache";
     private Ehcache bruteForceLoginProtectionCache;
 
+    @Activate
     public void start() {
         final EhCacheProvider cacheProvider = (EhCacheProvider) SpringContextSingleton.getInstance().getContext().getBean("ehCacheProvider");
         final CacheManager cacheManager = cacheProvider.getCacheManager();
@@ -36,6 +41,7 @@ public class BruteForceLoginProtectionCacheManager {
         }
     }
 
+    @Deactivate
     public void stop() {
         // flush
         if (bruteForceLoginProtectionCache != null) {

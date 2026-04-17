@@ -5,9 +5,3 @@
  - whitelist_ips (string)
  - activated (boolean)
  - nb_failed_login_max (long) = 6
-
-//---------------------------------------------------------
-// Brute Force Login Administration
-//---------------------------------------------------------
-
-[jnt:serverSettingsBruteForceLoginProtection] > jnt:content, mix:title, jmix:studioOnly, jmix:siteComponent
