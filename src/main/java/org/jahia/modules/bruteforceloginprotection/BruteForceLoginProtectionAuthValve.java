@@ -12,7 +12,7 @@ import org.apache.commons.net.util.SubnetUtils;
 import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
 import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.cache.SettingCacheEntry;
-import org.jahia.modules.bruteforceloginprotection.flow.BruteForceLoginProtectionHandler;
+import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.params.valves.AuthValveContext;
 import org.jahia.params.valves.BaseAuthValve;
 import org.jahia.params.valves.LoginEngineAuthValveImpl;
@@ -82,22 +82,22 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
                             final String whiteListIpsStr;
                             final Long nbFailedLoginMax;
                             final Boolean activated;
-                            final SettingCacheEntry whitelistIpsCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
-                            final SettingCacheEntry nbFailedLoginMaxCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX);
-                            final SettingCacheEntry activatedCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED);
+                            final SettingCacheEntry whitelistIpsCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS);
+                            final SettingCacheEntry nbFailedLoginMaxCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX);
+                            final SettingCacheEntry activatedCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED);
 
                             if (whitelistIpsCacheEntry == null || nbFailedLoginMaxCacheEntry == null || activatedCacheEntry == null) {
-                                final JCRNodeWrapper bruteForceLoginProtectionNode = session.getNode(BruteForceLoginProtectionHandler.NODE_PATH);
-                                whiteListIpsStr = bruteForceLoginProtectionNode.getPropertyAsString(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS);
-                                nbFailedLoginMax = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getLong();
-                                activated = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getBoolean();
-                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS, whiteListIpsStr));
-                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax));
-                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED, activated));
+                                final JCRNodeWrapper bruteForceLoginProtectionNode = session.getNode(BruteForceLoginProtectionConstants.NODE_PATH);
+                                whiteListIpsStr = bruteForceLoginProtectionNode.getPropertyAsString(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS);
+                                nbFailedLoginMax = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX).getLong();
+                                activated = bruteForceLoginProtectionNode.getProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED).getBoolean();
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whiteListIpsStr));
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax));
+                                bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, activated));
                             } else {
-                                whiteListIpsStr = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_WHITELIST_IPS).getValue().toString();
-                                nbFailedLoginMax = (Long) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_NB_FAILED_LOGIN_MAX).getValue();
-                                activated = (Boolean) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionHandler.PROPERTY_ACTIVATED).getValue();
+                                whiteListIpsStr = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS).getValue().toString();
+                                nbFailedLoginMax = (Long) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX).getValue();
+                                activated = (Boolean) bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED).getValue();
                             }
 
                             final List<SubnetUtils> whitelistIps = getSubnetUtilsList(whiteListIpsStr);

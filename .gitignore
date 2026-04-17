@@ -5,3 +5,7 @@
 *.iml
 *.ipr
 target
+.codegraph
+node
+node_modules
+src/main/resources/javascript/apps/*
