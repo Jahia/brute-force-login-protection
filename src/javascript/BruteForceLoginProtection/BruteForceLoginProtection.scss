@@ -137,6 +137,116 @@
     margin-bottom: 32px;
 }
 
+.bflp_trackedSection {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 24px;
+    border-top: 1px solid #e0e0e0;
+    margin-bottom: 32px;
+}
+
+.bflp_sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+    }
+}
+
+.bflp_refreshBtn {
+    padding: 6px 12px;
+    background-color: #fff;
+    border: 1px solid #0077cc;
+    border-radius: 4px;
+    color: #0077cc;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        background-color: #e8f2fb;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.bflp_table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+
+    th,
+    td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    th {
+        font-weight: 600;
+        color: #555;
+        background-color: #f7f7f7;
+    }
+
+    tr:hover td {
+        background-color: #fafafa;
+    }
+}
+
+.bflp_ipCell {
+    font-family: monospace;
+}
+
+.bflp_badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+
+    &--blocked {
+        background-color: #fdecea;
+        color: #c62828;
+    }
+
+    &--tracked {
+        background-color: #fff8e1;
+        color: #8a6d00;
+    }
+}
+
+.bflp_unblockBtn {
+    padding: 4px 12px;
+    background-color: #fff;
+    border: 1px solid #c62828;
+    border-radius: 4px;
+    color: #c62828;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        background-color: #fdecea;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.bflp_emptyState {
+    color: #888;
+    font-style: italic;
+    padding: 12px 0;
+}
+
 .bflp_flushSection {
     display: flex;
     flex-direction: column;

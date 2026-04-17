@@ -21,3 +21,19 @@ export const FLUSH_CACHE = gql`
         bruteForceLoginProtectionFlushCache
     }
 `;
+
+export const GET_TRACKED_IPS = gql`
+    query {
+        bruteForceLoginProtectionTrackedIps {
+            ip
+            nbFailedLogins
+            blocked
+        }
+    }
+`;
+
+export const UNBLOCK_IP = gql`
+    mutation UnblockIp($ip: String!) {
+        bruteForceLoginProtectionUnblockIp(ip: $ip)
+    }
+`;

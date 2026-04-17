@@ -7,6 +7,8 @@ import graphql.annotations.annotationTypes.GraphQLTypeExtension;
 import org.jahia.api.Constants;
 import org.jahia.api.content.JCRTemplate;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
+import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
+import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
@@ -15,6 +17,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.jcr.RepositoryException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @GraphQLTypeExtension(DXGraphQLProvider.Query.class)
 @GraphQLName("BruteForceLoginProtectionQueries")
@@ -59,6 +64,25 @@ public class BruteForceLoginProtectionQueryExtension {
         }
     }
 
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionTrackedIps")
+    @GraphQLDescription("Returns the list of tracked IPs with their failed login counts")
+    @GraphQLRequiresPermission("admin")
+    public static List<GqlTrackedIp> trackedIps() {
+        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
+        if (cacheManager == null) {
+            return Collections.emptyList();
+        }
+        final GqlSettings currentSettings = settings();
+        final int threshold = currentSettings.getNbFailedLoginMax();
+        final List<IpCacheEntry> entries = cacheManager.getAllIpCacheEntries();
+        final List<GqlTrackedIp> result = new ArrayList<>(entries.size());
+        for (IpCacheEntry entry : entries) {
+            result.add(new GqlTrackedIp(entry.getKey(), entry.getNbFailedLogins(), entry.getNbFailedLogins() >= threshold));
+        }
+        return result;
+    }
+
     @GraphQLName("BruteForceLoginProtectionSettings")
     @GraphQLDescription("Settings for the brute force login protection module")
     public static class GqlSettings {
@@ -96,6 +120,42 @@ public class BruteForceLoginProtectionQueryExtension {
         @GraphQLDescription("Comma-separated list of CIDR blocks that are never blocked")
         public String getWhitelistIps() {
             return whitelistIps;
+        }
+    }
+
+    @GraphQLName("BruteForceLoginProtectionTrackedIp")
+    @GraphQLDescription("A tracked IP with its failed login count and blocked status")
+    public static class GqlTrackedIp {
+
+        private final String ip;
+        private final int nbFailedLogins;
+        private final boolean blocked;
+
+        public GqlTrackedIp(String ip, int nbFailedLogins, boolean blocked) {
+            this.ip = ip;
+            this.nbFailedLogins = nbFailedLogins;
+            this.blocked = blocked;
+        }
+
+        @GraphQLField
+        @GraphQLName("ip")
+        @GraphQLDescription("The tracked IP address")
+        public String getIp() {
+            return ip;
+        }
+
+        @GraphQLField
+        @GraphQLName("nbFailedLogins")
+        @GraphQLDescription("Number of failed login attempts recorded for this IP")
+        public int getNbFailedLogins() {
+            return nbFailedLogins;
+        }
+
+        @GraphQLField
+        @GraphQLName("blocked")
+        @GraphQLDescription("Whether this IP currently exceeds the failed-login threshold")
+        public boolean isBlocked() {
+            return blocked;
         }
     }
 }

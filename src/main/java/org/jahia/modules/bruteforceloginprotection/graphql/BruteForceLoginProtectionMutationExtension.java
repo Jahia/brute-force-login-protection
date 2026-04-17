@@ -74,6 +74,23 @@ public class BruteForceLoginProtectionMutationExtension {
         return Boolean.TRUE;
     }
 
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionUnblockIp")
+    @GraphQLDescription("Removes a single IP from the tracking cache, unblocking it")
+    @GraphQLRequiresPermission("admin")
+    public static Boolean unblockIp(@GraphQLName("ip") @GraphQLDescription("The IP to unblock") String ip) {
+        if (ip == null || ip.trim().isEmpty()) {
+            return Boolean.FALSE;
+        }
+        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
+        if (cacheManager == null) {
+            LOGGER.warn("BruteForceLoginProtectionCacheManager OSGi service is not available");
+            return Boolean.FALSE;
+        }
+        cacheManager.clearCacheEntryByKey(ip.trim());
+        return Boolean.TRUE;
+    }
+
     private static JCRNodeWrapper getOrCreateSettingsNode(JCRSessionWrapper session) throws RepositoryException {
         if (session.nodeExists(SETTINGS_NODE_PATH)) {
             return session.getNode(SETTINGS_NODE_PATH);

@@ -3,7 +3,13 @@ import {useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
 import styles from './BruteForceLoginProtection.scss';
-import {FLUSH_CACHE, GET_SETTINGS, SAVE_SETTINGS} from './BruteForceLoginProtection.gql';
+import {
+    FLUSH_CACHE,
+    GET_SETTINGS,
+    GET_TRACKED_IPS,
+    SAVE_SETTINGS,
+    UNBLOCK_IP
+} from './BruteForceLoginProtection.gql';
 
 export const BruteForceLoginProtectionAdmin = () => {
     const {t} = useTranslation('brute-force-login-protection');
@@ -33,6 +39,27 @@ export const BruteForceLoginProtectionAdmin = () => {
 
     const [saveSettings, {loading: saving}] = useMutation(SAVE_SETTINGS);
     const [flushCache, {loading: flushing}] = useMutation(FLUSH_CACHE);
+
+    const {
+        data: trackedData,
+        loading: trackedLoading,
+        refetch: refetchTracked
+    } = useQuery(GET_TRACKED_IPS, {fetchPolicy: 'network-only'});
+
+    const [unblockIp, {loading: unblocking}] = useMutation(UNBLOCK_IP);
+    const [unblockingIp, setUnblockingIp] = useState(null);
+
+    const handleUnblock = async ip => {
+        setUnblockingIp(ip);
+        try {
+            await unblockIp({variables: {ip}});
+            await refetchTracked();
+        } catch (err) {
+            console.error('Failed to unblock IP:', err);
+        } finally {
+            setUnblockingIp(null);
+        }
+    };
 
     const handleSave = async () => {
         setSaveStatus(null);
@@ -154,6 +181,62 @@ export const BruteForceLoginProtectionAdmin = () => {
                     isDisabled={saving}
                     onClick={handleSave}
                 />
+            </div>
+
+            <div className={styles.bflp_trackedSection}>
+                <div className={styles.bflp_sectionHeader}>
+                    <h3>{t('label.trackedIpsTitle')}</h3>
+                    <button
+                        type="button"
+                        className={styles.bflp_refreshBtn}
+                        disabled={trackedLoading}
+                        onClick={() => refetchTracked()}
+                    >
+                        {trackedLoading ? t('label.refreshing') : t('label.refresh')}
+                    </button>
+                </div>
+                <Typography>{t('label.trackedIpsDescription')}</Typography>
+                {trackedLoading && (!trackedData || !trackedData.bruteForceLoginProtectionTrackedIps) ? (
+                    <div className={styles.bflp_loading}>
+                        <Loader size="big"/>
+                    </div>
+                ) : (trackedData && trackedData.bruteForceLoginProtectionTrackedIps && trackedData.bruteForceLoginProtectionTrackedIps.length > 0) ? (
+                    <table className={styles.bflp_table}>
+                        <thead>
+                            <tr>
+                                <th>{t('label.colIp')}</th>
+                                <th>{t('label.colFailedLogins')}</th>
+                                <th>{t('label.colStatus')}</th>
+                                <th>{t('label.colActions')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {trackedData.bruteForceLoginProtectionTrackedIps.map(row => (
+                                <tr key={row.ip}>
+                                    <td className={styles.bflp_ipCell}>{row.ip}</td>
+                                    <td>{row.nbFailedLogins}</td>
+                                    <td>
+                                        <span className={`${styles.bflp_badge} ${row.blocked ? styles['bflp_badge--blocked'] : styles['bflp_badge--tracked']}`}>
+                                            {row.blocked ? t('label.statusBlocked') : t('label.statusTracked')}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            className={styles.bflp_unblockBtn}
+                                            disabled={unblocking && unblockingIp === row.ip}
+                                            onClick={() => handleUnblock(row.ip)}
+                                        >
+                                            {unblocking && unblockingIp === row.ip ? t('label.unblocking') : t('label.unblock')}
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <Typography className={styles.bflp_emptyState}>{t('label.noTrackedIps')}</Typography>
+                )}
             </div>
 
             <div className={styles.bflp_flushSection}>

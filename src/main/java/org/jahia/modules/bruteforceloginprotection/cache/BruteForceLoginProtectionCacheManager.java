@@ -1,5 +1,7 @@
 package org.jahia.modules.bruteforceloginprotection.cache;
 
+import java.util.ArrayList;
+import java.util.List;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Ehcache;
@@ -80,5 +82,21 @@ public class BruteForceLoginProtectionCacheManager {
         }
         final ModuleClassLoaderAwareCacheEntry cacheEntry = new ModuleClassLoaderAwareCacheEntry(settingCacheEntry, "brute-force-login-protection");
         bruteForceLoginProtectionCache.put(new Element(settingCacheEntry.getKey(), cacheEntry));
+    }
+
+    public List<IpCacheEntry> getAllIpCacheEntries() {
+        final List<IpCacheEntry> entries = new ArrayList<>();
+        if (bruteForceLoginProtectionCache == null) {
+            return entries;
+        }
+        for (Object key : bruteForceLoginProtectionCache.getKeys()) {
+            if (key instanceof String) {
+                final Object value = CacheHelper.getObjectValue(bruteForceLoginProtectionCache, (String) key);
+                if (value instanceof IpCacheEntry) {
+                    entries.add((IpCacheEntry) value);
+                }
+            }
+        }
+        return entries;
     }
 }
