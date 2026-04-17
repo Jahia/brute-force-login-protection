@@ -26,8 +26,8 @@ export const BruteForceLoginProtectionAdmin = () => {
     const {loading} = useQuery(GET_SETTINGS, {
         fetchPolicy: 'network-only',
         onCompleted: data => {
-            if (data && data.bruteForceLoginProtectionSettings) {
-                const s = data.bruteForceLoginProtectionSettings;
+            const s = data?.bruteForceLoginProtectionSettings;
+            if (s) {
                 setFormState({
                     activated: s.activated,
                     nbFailedLoginMax: s.nbFailedLoginMax,
@@ -78,7 +78,7 @@ export const BruteForceLoginProtectionAdmin = () => {
                     whitelistIps: formState.whitelistIps
                 }
             });
-            setSaveStatus(result.data && result.data.bruteForceLoginProtectionSaveSettings ? 'success' : 'error');
+            setSaveStatus(result.data?.bruteForceLoginProtectionSaveSettings ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to save settings:', err);
             setSaveStatus('error');
@@ -89,7 +89,7 @@ export const BruteForceLoginProtectionAdmin = () => {
         setFlushStatus(null);
         try {
             const result = await flushCache();
-            setFlushStatus(result.data && result.data.bruteForceLoginProtectionFlushCache ? 'success' : 'error');
+            setFlushStatus(result.data?.bruteForceLoginProtectionFlushCache ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to flush cache:', err);
             setFlushStatus('error');
@@ -101,6 +101,56 @@ export const BruteForceLoginProtectionAdmin = () => {
             <div className={styles.bflp_loading}>
                 <Loader size="big"/>
             </div>
+        );
+    }
+
+    const trackedRows = trackedData?.bruteForceLoginProtectionTrackedIps;
+    let trackedContent;
+    if (trackedLoading && !trackedRows) {
+        trackedContent = (
+            <div className={styles.bflp_loading}>
+                <Loader size="big"/>
+            </div>
+        );
+    } else if (trackedRows?.length > 0) {
+        trackedContent = (
+            <table className={styles.bflp_table}>
+                <thead>
+                    <tr>
+                        <th>{t('label.colIp')}</th>
+                        <th>{t('label.colFailedLogins')}</th>
+                        <th>{t('label.colStatus')}</th>
+                        <th>{t('label.colActions')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {trackedRows.map(row => (
+                        <tr key={row.ip}>
+                            <td className={styles.bflp_ipCell}>{row.ip}</td>
+                            <td>{row.nbFailedLogins}</td>
+                            <td>
+                                <span className={`${styles.bflp_badge} ${row.blocked ? styles['bflp_badge--blocked'] : styles['bflp_badge--tracked']}`}>
+                                    {row.blocked ? t('label.statusBlocked') : t('label.statusTracked')}
+                                </span>
+                            </td>
+                            <td>
+                                <button
+                                    type="button"
+                                    className={styles.bflp_unblockBtn}
+                                    disabled={unblocking && unblockingIp === row.ip}
+                                    onClick={() => handleUnblock(row.ip)}
+                                >
+                                    {unblocking && unblockingIp === row.ip ? t('label.unblocking') : t('label.unblock')}
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    } else {
+        trackedContent = (
+            <Typography className={styles.bflp_emptyState}>{t('label.noTrackedIps')}</Typography>
         );
     }
 
@@ -117,7 +167,7 @@ export const BruteForceLoginProtectionAdmin = () => {
             <div className={styles.bflp_form}>
                 <div className={styles.bflp_fieldGroup}>
                     <span className={styles.bflp_label}>{t('label.serviceStatus')}</span>
-                    <label className={styles.bflp_toggle}>
+                    <label className={styles.bflp_toggle} aria-label={t('label.serviceStatus')}>
                         <input
                             type="checkbox"
                             checked={formState.activated}
@@ -139,7 +189,7 @@ export const BruteForceLoginProtectionAdmin = () => {
                         value={formState.nbFailedLoginMax}
                         onChange={e => setFormState(prev => ({
                             ...prev,
-                            nbFailedLoginMax: parseInt(e.target.value, 10) || 1
+                            nbFailedLoginMax: Number.parseInt(e.target.value, 10) || 1
                         }))}
                     />
                 </div>
@@ -196,47 +246,7 @@ export const BruteForceLoginProtectionAdmin = () => {
                     </button>
                 </div>
                 <Typography>{t('label.trackedIpsDescription')}</Typography>
-                {trackedLoading && (!trackedData || !trackedData.bruteForceLoginProtectionTrackedIps) ? (
-                    <div className={styles.bflp_loading}>
-                        <Loader size="big"/>
-                    </div>
-                ) : (trackedData && trackedData.bruteForceLoginProtectionTrackedIps && trackedData.bruteForceLoginProtectionTrackedIps.length > 0) ? (
-                    <table className={styles.bflp_table}>
-                        <thead>
-                            <tr>
-                                <th>{t('label.colIp')}</th>
-                                <th>{t('label.colFailedLogins')}</th>
-                                <th>{t('label.colStatus')}</th>
-                                <th>{t('label.colActions')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {trackedData.bruteForceLoginProtectionTrackedIps.map(row => (
-                                <tr key={row.ip}>
-                                    <td className={styles.bflp_ipCell}>{row.ip}</td>
-                                    <td>{row.nbFailedLogins}</td>
-                                    <td>
-                                        <span className={`${styles.bflp_badge} ${row.blocked ? styles['bflp_badge--blocked'] : styles['bflp_badge--tracked']}`}>
-                                            {row.blocked ? t('label.statusBlocked') : t('label.statusTracked')}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <button
-                                            type="button"
-                                            className={styles.bflp_unblockBtn}
-                                            disabled={unblocking && unblockingIp === row.ip}
-                                            onClick={() => handleUnblock(row.ip)}
-                                        >
-                                            {unblocking && unblockingIp === row.ip ? t('label.unblocking') : t('label.unblock')}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                ) : (
-                    <Typography className={styles.bflp_emptyState}>{t('label.noTrackedIps')}</Typography>
-                )}
+                {trackedContent}
             </div>
 
             <div className={styles.bflp_flushSection}>
