@@ -9,18 +9,18 @@ import java.io.Serializable;
 public final class SettingCacheEntry extends AbstractCacheEntry implements Serializable {
 
     private static final long serialVersionUID = -1432236243384204528L;
-    private Object value;
+    private Serializable value;
 
-    public SettingCacheEntry(String property, Object value) {
+    public SettingCacheEntry(String property, Serializable value) {
         setKey(property);
         setValue(value);
     }
 
-    public Object getValue() {
+    public Serializable getValue() {
         return value;
     }
 
-    public void setValue(Object value) {
+    public void setValue(Serializable value) {
         this.value = value;
     }
 }

@@ -47,13 +47,13 @@ public class BruteForceLoginProtectionMutationExtension {
                             JCRNodeWrapper node = getOrCreateSettingsNode(session);
                             node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, Boolean.TRUE.equals(activated));
                             if (nbFailedLoginMax != null) {
-                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, (long) nbFailedLoginMax);
+                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax.longValue());
                             }
                             if (whitelistIps != null) {
                                 node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whitelistIps);
                             }
                             if (timeToIdle != null && timeToIdle > 0) {
-                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, (long) timeToIdle);
+                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, timeToIdle.longValue());
                             }
                             session.save();
                         } catch (RepositoryException e) {
@@ -110,7 +110,7 @@ public class BruteForceLoginProtectionMutationExtension {
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, "127.0.0.1/32,::1/128");
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, false);
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, 6L);
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, (long) BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
+        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
         return node;
     }
 }

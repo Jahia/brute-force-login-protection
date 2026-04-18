@@ -11,7 +11,6 @@ import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
 import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
 import org.jahia.modules.bruteforceloginprotection.cache.SettingCacheEntry;
-import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.params.valves.AuthValveContext;
 import org.jahia.params.valves.BaseAuthValve;
 import org.jahia.params.valves.LoginEngineAuthValveImpl;
@@ -67,6 +66,22 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
     @Deactivate
     public void stop() {
         removeValve(authPipeline);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof BruteForceLoginProtectionAuthValve)) {
+            return false;
+        }
+        return super.equals(obj);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 
     @Override
