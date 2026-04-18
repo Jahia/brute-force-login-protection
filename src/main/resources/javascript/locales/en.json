@@ -28,6 +28,8 @@
     "statusTracked": "Tracked",
     "unblock": "Unblock",
     "unblocking": "Unblocking…",
-    "noTrackedIps": "No IPs are currently being tracked."
+    "noTrackedIps": "No IPs are currently being tracked.",
+    "timeToIdle": "Time to idle (seconds)",
+    "timeToIdleTooltip": "Number of seconds without activity before a tracked IP is forgotten. Default: 3600 (1 hour)."
   }
 }

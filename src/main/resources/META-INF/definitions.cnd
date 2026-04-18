@@ -5,3 +5,4 @@
  - whitelist_ips (string)
  - activated (boolean)
  - nb_failed_login_max (long) = 6
+ - time_to_idle (long) = 3600

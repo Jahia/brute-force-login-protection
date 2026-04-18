@@ -38,7 +38,8 @@ public class BruteForceLoginProtectionMutationExtension {
     public static Boolean saveSettings(
             @GraphQLName("activated") Boolean activated,
             @GraphQLName("nbFailedLoginMax") Integer nbFailedLoginMax,
-            @GraphQLName("whitelistIps") String whitelistIps) {
+            @GraphQLName("whitelistIps") String whitelistIps,
+            @GraphQLName("timeToIdle") @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten") Integer timeToIdle) {
         try {
             BundleUtils.getOsgiService(JCRTemplate.class, null)
                     .doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
@@ -51,12 +52,21 @@ public class BruteForceLoginProtectionMutationExtension {
                             if (whitelistIps != null) {
                                 node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whitelistIps);
                             }
+                            if (timeToIdle != null && timeToIdle > 0) {
+                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, (long) timeToIdle);
+                            }
                             session.save();
                         } catch (RepositoryException e) {
                             LOGGER.error("Error saving brute force login protection settings", e);
                         }
                         return null;
                     });
+            if (timeToIdle != null && timeToIdle > 0) {
+                final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
+                if (cacheManager != null) {
+                    cacheManager.setTimeToIdle(timeToIdle);
+                }
+            }
             CacheHelper.flushEhcacheByName(BruteForceLoginProtectionCacheManager.BRUTE_FORCE_LOGIN_PROTECTION_CACHE, true);
             return Boolean.TRUE;
         } catch (RepositoryException e) {
@@ -100,6 +110,7 @@ public class BruteForceLoginProtectionMutationExtension {
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, "127.0.0.1/32,::1/128");
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, false);
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, 6L);
+        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, (long) BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
         return node;
     }
 }

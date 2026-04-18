@@ -6,13 +6,14 @@ export const GET_SETTINGS = gql`
             activated
             nbFailedLoginMax
             whitelistIps
+            timeToIdle
         }
     }
 `;
 
 export const SAVE_SETTINGS = gql`
-    mutation SaveSettings($activated: Boolean!, $nbFailedLoginMax: Int!, $whitelistIps: String!) {
-        bruteForceLoginProtectionSaveSettings(activated: $activated, nbFailedLoginMax: $nbFailedLoginMax, whitelistIps: $whitelistIps)
+    mutation SaveSettings($activated: Boolean!, $nbFailedLoginMax: Int!, $whitelistIps: String!, $timeToIdle: Int) {
+        bruteForceLoginProtectionSaveSettings(activated: $activated, nbFailedLoginMax: $nbFailedLoginMax, whitelistIps: $whitelistIps, timeToIdle: $timeToIdle)
     }
 `;
 

@@ -7,10 +7,13 @@ import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Ehcache;
 import net.sf.ehcache.Element;
 import net.sf.ehcache.config.CacheConfiguration;
+import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.services.SpringContextSingleton;
 import org.jahia.services.cache.CacheHelper;
 import org.jahia.services.cache.ModuleClassLoaderAwareCacheEntry;
 import org.jahia.services.cache.ehcache.EhCacheProvider;
+import org.jahia.services.content.JCRNodeWrapper;
+import org.jahia.services.content.JCRTemplate;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
@@ -25,7 +28,6 @@ import org.slf4j.LoggerFactory;
 public class BruteForceLoginProtectionCacheManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionCacheManager.class);
-    private static final int TIME_TO_IDLE = 3600;
     public static final String BRUTE_FORCE_LOGIN_PROTECTION_CACHE = "BruteForceLoginProtectionCache";
     private Ehcache bruteForceLoginProtectionCache;
 
@@ -33,32 +35,56 @@ public class BruteForceLoginProtectionCacheManager {
     public void start() {
         final EhCacheProvider cacheProvider = (EhCacheProvider) SpringContextSingleton.getInstance().getContext().getBean("ehCacheProvider");
         final CacheManager cacheManager = cacheProvider.getCacheManager();
+        final int timeToIdle = readTimeToIdleFromJcr();
         bruteForceLoginProtectionCache = cacheManager.getCache(BRUTE_FORCE_LOGIN_PROTECTION_CACHE);
         if (bruteForceLoginProtectionCache == null) {
-            bruteForceLoginProtectionCache = createBruteForceLoginProtectionCache(cacheManager, BRUTE_FORCE_LOGIN_PROTECTION_CACHE);
+            bruteForceLoginProtectionCache = createBruteForceLoginProtectionCache(cacheManager, BRUTE_FORCE_LOGIN_PROTECTION_CACHE, timeToIdle);
         } else {
             bruteForceLoginProtectionCache.removeAll();
+            bruteForceLoginProtectionCache.getCacheConfiguration().setTimeToIdleSeconds(timeToIdle);
         }
     }
 
     @Deactivate
     public void stop() {
-        // flush
         if (bruteForceLoginProtectionCache != null) {
             bruteForceLoginProtectionCache.removeAll();
         }
     }
 
-    private Ehcache createBruteForceLoginProtectionCache(CacheManager cacheManager, String cacheName) {
+    public void setTimeToIdle(int timeToIdle) {
+        if (bruteForceLoginProtectionCache != null) {
+            bruteForceLoginProtectionCache.getCacheConfiguration().setTimeToIdleSeconds(timeToIdle);
+        }
+    }
+
+    private int readTimeToIdleFromJcr() {
+        try {
+            final Integer stored = JCRTemplate.getInstance().doExecuteWithSystemSessionAsUser(null, null, null, session -> {
+                if (!session.nodeExists(BruteForceLoginProtectionConstants.NODE_PATH)) {
+                    return BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
+                }
+                final JCRNodeWrapper node = session.getNode(BruteForceLoginProtectionConstants.NODE_PATH);
+                if (!node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE)) {
+                    return BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
+                }
+                return (int) node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE).getLong();
+            });
+            return stored != null ? stored : BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
+        } catch (Exception e) {
+            LOGGER.debug("Could not read timeToIdle from JCR on startup, using default of {}s",
+                    BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
+            return BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
+        }
+    }
+
+    private Ehcache createBruteForceLoginProtectionCache(CacheManager cacheManager, String cacheName, int timeToIdle) {
         final CacheConfiguration cacheConfiguration = new CacheConfiguration();
         cacheConfiguration.setName(cacheName);
-        cacheConfiguration.setTimeToIdleSeconds(TIME_TO_IDLE);
+        cacheConfiguration.setTimeToIdleSeconds(timeToIdle);
         cacheConfiguration.setEternal(false);
-        // Create a new cache with the configuration
         final Ehcache cache = new Cache(cacheConfiguration);
         cache.setName(cacheName);
-        // Cache name has been set now we can initialize it by putting it in the manager.
-        // Only Cache manager is initializing caches.
         return cacheManager.addCacheIfAbsent(cache);
     }
 
@@ -84,7 +110,7 @@ public class BruteForceLoginProtectionCacheManager {
 
     public void cacheSetting(SettingCacheEntry settingCacheEntry) {
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Caching IP: {}", settingCacheEntry.getKey());
+            LOGGER.debug("Caching setting: {}", settingCacheEntry.getKey());
         }
         final ModuleClassLoaderAwareCacheEntry cacheEntry = new ModuleClassLoaderAwareCacheEntry(settingCacheEntry, "brute-force-login-protection");
         bruteForceLoginProtectionCache.put(new Element(settingCacheEntry.getKey(), cacheEntry));

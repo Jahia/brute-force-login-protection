@@ -52,7 +52,10 @@ public class BruteForceLoginProtectionQueryExtension {
                             String whitelistIps = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS)
                                     ? node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS).getString()
                                     : "127.0.0.1/32,::1/128";
-                            return new GqlSettings(activated, nbFailedLoginMax, whitelistIps);
+                            int timeToIdle = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE)
+                                    ? (int) node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE).getLong()
+                                    : BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
+                            return new GqlSettings(activated, nbFailedLoginMax, whitelistIps, timeToIdle);
                         } catch (RepositoryException e) {
                             LOGGER.error("Error reading brute force login protection settings", e);
                             return GqlSettings.defaults();
@@ -90,15 +93,17 @@ public class BruteForceLoginProtectionQueryExtension {
         private final boolean activated;
         private final int nbFailedLoginMax;
         private final String whitelistIps;
+        private final int timeToIdle;
 
-        public GqlSettings(boolean activated, int nbFailedLoginMax, String whitelistIps) {
+        public GqlSettings(boolean activated, int nbFailedLoginMax, String whitelistIps, int timeToIdle) {
             this.activated = activated;
             this.nbFailedLoginMax = nbFailedLoginMax;
             this.whitelistIps = whitelistIps;
+            this.timeToIdle = timeToIdle;
         }
 
         public static GqlSettings defaults() {
-            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128");
+            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128", BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
         }
 
         @GraphQLField
@@ -120,6 +125,13 @@ public class BruteForceLoginProtectionQueryExtension {
         @GraphQLDescription("Comma-separated list of CIDR blocks that are never blocked")
         public String getWhitelistIps() {
             return whitelistIps;
+        }
+
+        @GraphQLField
+        @GraphQLName("timeToIdle")
+        @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten from the cache")
+        public int getTimeToIdle() {
+            return timeToIdle;
         }
     }
 

@@ -20,7 +20,8 @@ export const BruteForceLoginProtectionAdmin = () => {
     const [formState, setFormState] = useState({
         activated: false,
         nbFailedLoginMax: 6,
-        whitelistIps: '127.0.0.1/32,::1/128'
+        whitelistIps: '127.0.0.1/32,::1/128',
+        timeToIdle: 3600
     });
 
     const {loading} = useQuery(GET_SETTINGS, {
@@ -31,7 +32,8 @@ export const BruteForceLoginProtectionAdmin = () => {
                 setFormState({
                     activated: s.activated,
                     nbFailedLoginMax: s.nbFailedLoginMax,
-                    whitelistIps: s.whitelistIps
+                    whitelistIps: s.whitelistIps,
+                    timeToIdle: s.timeToIdle ?? 3600
                 });
             }
         }
@@ -75,7 +77,8 @@ export const BruteForceLoginProtectionAdmin = () => {
                 variables: {
                     activated: formState.activated,
                     nbFailedLoginMax: formState.nbFailedLoginMax,
-                    whitelistIps: formState.whitelistIps
+                    whitelistIps: formState.whitelistIps,
+                    timeToIdle: formState.timeToIdle
                 }
             });
             setSaveStatus(result.data?.bruteForceLoginProtectionSaveSettings ? 'success' : 'error');
@@ -205,6 +208,24 @@ export const BruteForceLoginProtectionAdmin = () => {
                         rows={6}
                         value={formState.whitelistIps}
                         onChange={e => setFormState(prev => ({...prev, whitelistIps: e.target.value}))}
+                    />
+                </div>
+
+                <div className={styles.bflp_fieldGroup}>
+                    <label className={styles.bflp_label} htmlFor="bflp-tti">
+                        {t('label.timeToIdle')}
+                        <span className={styles.bflp_tooltip} title={t('label.timeToIdleTooltip')}>ⓘ</span>
+                    </label>
+                    <input
+                        type="number"
+                        id="bflp-tti"
+                        className={styles.bflp_input}
+                        min="1"
+                        value={formState.timeToIdle}
+                        onChange={e => setFormState(prev => ({
+                            ...prev,
+                            timeToIdle: Number.parseInt(e.target.value, 10) || 3600
+                        }))}
                     />
                 </div>
             </div>
