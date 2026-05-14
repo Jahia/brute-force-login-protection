@@ -117,15 +117,6 @@
 }
 
 // CSS toggle switch
-// bflp_toggleLabel: the outer <label> that gives the checkbox its accessible name.
-// It stacks the visible text and the visual slider in a column so the layout is unchanged.
-.bflp_toggleLabel {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    cursor: pointer;
-}
-
 .bflp_toggle {
     position: relative;
     display: inline-flex;
