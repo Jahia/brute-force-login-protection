@@ -201,9 +201,9 @@
 .bflp_refreshBtn {
     padding: 6px 12px;
     background-color: #fff;
-    border: 1px solid #0077cc;
+    border: 1px solid #004a80;
     border-radius: 4px;
-    color: #0077cc;
+    color: #004a80;
     font-size: 0.8125rem;
     cursor: pointer;
 
@@ -212,7 +212,7 @@
     }
 
     &:focus-visible {
-        outline: 2px solid #0077cc;
+        outline: 2px solid #004a80;
         outline-offset: 2px;
     }
 
