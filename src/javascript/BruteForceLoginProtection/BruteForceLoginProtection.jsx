@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
@@ -16,6 +16,7 @@ export const BruteForceLoginProtectionAdmin = () => {
     const [saveStatus, setSaveStatus] = useState(null);
     const [flushStatus, setFlushStatus] = useState(null);
     const [validationError, setValidationError] = useState(null);
+    const whitelistRef = useRef(null);
 
     const [formState, setFormState] = useState({
         activated: false,
@@ -69,6 +70,8 @@ export const BruteForceLoginProtectionAdmin = () => {
 
         if (formState.activated && !formState.whitelistIps.trim()) {
             setValidationError(t('label.errorWhitelistRequired'));
+            // C-3: move focus to the invalid field so AT reads the error via aria-describedby
+            whitelistRef.current?.focus();
             return;
         }
 
@@ -101,8 +104,10 @@ export const BruteForceLoginProtectionAdmin = () => {
 
     if (loading) {
         return (
-            <div className={styles.bflp_loading}>
+            // Mi-2 / M-11: aria-busy + visually-hidden text announces loading state to AT
+            <div className={styles.bflp_loading} aria-busy="true" aria-live="polite">
                 <Loader size="big"/>
+                <span className={styles.bflp_sr_only}>{t('label.loading')}</span>
             </div>
         );
     }
@@ -111,19 +116,22 @@ export const BruteForceLoginProtectionAdmin = () => {
     let trackedContent;
     if (trackedLoading && !trackedRows) {
         trackedContent = (
-            <div className={styles.bflp_loading}>
+            <div className={styles.bflp_loading} aria-busy="true" aria-live="polite">
                 <Loader size="big"/>
+                <span className={styles.bflp_sr_only}>{t('label.loading')}</span>
             </div>
         );
     } else if (trackedRows?.length > 0) {
         trackedContent = (
-            <table className={styles.bflp_table}>
+            // M-3: aria-labelledby connects table to section heading
+            <table className={styles.bflp_table} aria-labelledby="bflp-tracked-heading">
                 <thead>
                     <tr>
-                        <th>{t('label.colIp')}</th>
-                        <th>{t('label.colFailedLogins')}</th>
-                        <th>{t('label.colStatus')}</th>
-                        <th>{t('label.colActions')}</th>
+                        {/* M-2: scope="col" ensures AT maps headers to data cells */}
+                        <th scope="col">{t('label.colIp')}</th>
+                        <th scope="col">{t('label.colFailedLogins')}</th>
+                        <th scope="col">{t('label.colStatus')}</th>
+                        <th scope="col">{t('label.colActions')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -137,9 +145,11 @@ export const BruteForceLoginProtectionAdmin = () => {
                                 </span>
                             </td>
                             <td>
+                                {/* M-4: aria-label includes IP so each button is distinguishable */}
                                 <button
                                     type="button"
                                     className={styles.bflp_unblockBtn}
+                                    aria-label={`${t('label.unblock')} ${row.ip}`}
                                     disabled={unblocking && unblockingIp === row.ip}
                                     onClick={() => handleUnblock(row.ip)}
                                 >
@@ -167,99 +177,127 @@ export const BruteForceLoginProtectionAdmin = () => {
                 <Typography>{t('label.description')}</Typography>
             </div>
 
-            <div className={styles.bflp_form}>
-                <div className={styles.bflp_fieldGroup}>
-                    <span className={styles.bflp_label}>{t('label.serviceStatus')}</span>
-                    <label className={styles.bflp_toggle} aria-label={t('label.serviceStatus')}>
+            {/* Mi-1: <form> wrapper enables Enter-key submission and AT form navigation */}
+            <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
+                <div className={styles.bflp_form}>
+                    <div className={styles.bflp_fieldGroup}>
+                        {/* C-2: span with id — input uses aria-labelledby instead of broken aria-label on <label> */}
+                        <span id="bflp-toggle-label" className={styles.bflp_label}>
+                            {t('label.serviceStatus')}
+                        </span>
+                        <label className={styles.bflp_toggle}>
+                            <input
+                                type="checkbox"
+                                aria-labelledby="bflp-toggle-label"
+                                checked={formState.activated}
+                                onChange={e => setFormState(prev => ({...prev, activated: e.target.checked}))}
+                            />
+                            <span className={styles.bflp_toggleSlider}/>
+                        </label>
+                    </div>
+
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-max">
+                            {t('label.nbFailedLoginMax')}
+                        </label>
+                        {/* Mi-4: aria-describedby links input to its range hint */}
                         <input
-                            type="checkbox"
-                            checked={formState.activated}
-                            onChange={e => setFormState(prev => ({...prev, activated: e.target.checked}))}
+                            type="number"
+                            id="bflp-max"
+                            className={styles.bflp_input}
+                            min="1"
+                            aria-describedby="bflp-max-hint"
+                            value={formState.nbFailedLoginMax}
+                            onChange={e => setFormState(prev => ({
+                                ...prev,
+                                nbFailedLoginMax: Number.parseInt(e.target.value, 10) || 1
+                            }))}
                         />
-                        <span className={styles.bflp_toggleSlider}/>
-                    </label>
+                        <p id="bflp-max-hint" className={styles.bflp_hint}>{t('label.nbFailedLoginMaxHint')}</p>
+                    </div>
+
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-whitelist">
+                            {t('label.whitelistIps')}
+                            {/* M-5: aria-hidden hides decorative ⓘ glyph from AT */}
+                            <span aria-hidden="true" className={styles.bflp_tooltip}>ⓘ</span>
+                        </label>
+                        {/* M-5: visible hint replaces hover-only tooltip — keyboard accessible */}
+                        <p id="bflp-whitelist-hint" className={styles.bflp_hint}>{t('label.whitelistIpsTooltip')}</p>
+                        {/* C-3: aria-describedby chains hint + error; ref enables focus on validation failure */}
+                        <textarea
+                            id="bflp-whitelist"
+                            ref={whitelistRef}
+                            className={styles.bflp_textarea}
+                            rows={6}
+                            aria-describedby="bflp-whitelist-hint bflp-whitelist-error"
+                            value={formState.whitelistIps}
+                            onChange={e => setFormState(prev => ({...prev, whitelistIps: e.target.value}))}
+                        />
+                        {/* C-3: always-present error container — content change is read by AT when focus is on field */}
+                        <p id="bflp-whitelist-error" className={styles.bflp_fieldError} aria-atomic="true">
+                            {validationError || ''}
+                        </p>
+                    </div>
+
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-tti">
+                            {t('label.timeToIdle')}
+                            {/* M-5: aria-hidden hides decorative ⓘ glyph from AT */}
+                            <span aria-hidden="true" className={styles.bflp_tooltip}>ⓘ</span>
+                        </label>
+                        {/* Mi-4: aria-describedby links input to its range hint */}
+                        <input
+                            type="number"
+                            id="bflp-tti"
+                            className={styles.bflp_input}
+                            min="1"
+                            aria-describedby="bflp-tti-hint"
+                            value={formState.timeToIdle}
+                            onChange={e => setFormState(prev => ({
+                                ...prev,
+                                timeToIdle: Number.parseInt(e.target.value, 10) || 3600
+                            }))}
+                        />
+                        {/* M-5: visible hint replaces hover-only tooltip — keyboard accessible */}
+                        <p id="bflp-tti-hint" className={styles.bflp_hint}>{t('label.timeToIdleTooltip')}</p>
+                    </div>
                 </div>
 
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-max">
-                        {t('label.nbFailedLoginMax')}
-                    </label>
-                    <input
-                        type="number"
-                        id="bflp-max"
-                        className={styles.bflp_input}
-                        min="1"
-                        value={formState.nbFailedLoginMax}
-                        onChange={e => setFormState(prev => ({
-                            ...prev,
-                            nbFailedLoginMax: Number.parseInt(e.target.value, 10) || 1
-                        }))}
+                <div className={styles.bflp_actions}>
+                    {/* C-1: always-present live regions — AT announces status changes even when React mounts/unmounts inner content */}
+                    <div role="alert" aria-live="assertive" aria-atomic="true">
+                        {saveStatus === 'error' && (
+                            <div className={`${styles.bflp_alert} ${styles['bflp_alert--error']}`}>
+                                {t('label.saveError')}
+                            </div>
+                        )}
+                    </div>
+                    <div role="status" aria-live="polite" aria-atomic="true">
+                        {saveStatus === 'success' && (
+                            <div className={`${styles.bflp_alert} ${styles['bflp_alert--success']}`}>
+                                {t('label.saveSuccess')}
+                            </div>
+                        )}
+                    </div>
+                    <Button
+                        label={t('label.save')}
+                        variant="primary"
+                        isDisabled={saving}
+                        onClick={handleSave}
                     />
                 </div>
+            </form>
 
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-whitelist">
-                        {t('label.whitelistIps')}
-                        <span className={styles.bflp_tooltip} title={t('label.whitelistIpsTooltip')}>ⓘ</span>
-                    </label>
-                    <textarea
-                        id="bflp-whitelist"
-                        className={styles.bflp_textarea}
-                        rows={6}
-                        value={formState.whitelistIps}
-                        onChange={e => setFormState(prev => ({...prev, whitelistIps: e.target.value}))}
-                    />
-                </div>
-
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-tti">
-                        {t('label.timeToIdle')}
-                        <span className={styles.bflp_tooltip} title={t('label.timeToIdleTooltip')}>ⓘ</span>
-                    </label>
-                    <input
-                        type="number"
-                        id="bflp-tti"
-                        className={styles.bflp_input}
-                        min="1"
-                        value={formState.timeToIdle}
-                        onChange={e => setFormState(prev => ({
-                            ...prev,
-                            timeToIdle: Number.parseInt(e.target.value, 10) || 3600
-                        }))}
-                    />
-                </div>
-            </div>
-
-            <div className={styles.bflp_actions}>
-                {validationError && (
-                    <div className={`${styles.bflp_alert} ${styles['bflp_alert--error']}`}>
-                        {validationError}
-                    </div>
-                )}
-                {saveStatus === 'success' && (
-                    <div className={`${styles.bflp_alert} ${styles['bflp_alert--success']}`}>
-                        {t('label.saveSuccess')}
-                    </div>
-                )}
-                {saveStatus === 'error' && (
-                    <div className={`${styles.bflp_alert} ${styles['bflp_alert--error']}`}>
-                        {t('label.saveError')}
-                    </div>
-                )}
-                <Button
-                    label={t('label.save')}
-                    variant="primary"
-                    isDisabled={saving}
-                    onClick={handleSave}
-                />
-            </div>
-
-            <div className={styles.bflp_trackedSection}>
+            {/* Mi-3: aria-busy on section container signals loading state to AT */}
+            <div className={styles.bflp_trackedSection} aria-busy={trackedLoading}>
                 <div className={styles.bflp_sectionHeader}>
-                    <h3>{t('label.trackedIpsTitle')}</h3>
+                    {/* M-3: id referenced by table's aria-labelledby */}
+                    <h3 id="bflp-tracked-heading">{t('label.trackedIpsTitle')}</h3>
                     <button
                         type="button"
                         className={styles.bflp_refreshBtn}
+                        aria-busy={trackedLoading}
                         disabled={trackedLoading}
                         onClick={() => refetchTracked()}
                     >
@@ -272,16 +310,21 @@ export const BruteForceLoginProtectionAdmin = () => {
 
             <div className={styles.bflp_flushSection}>
                 <Typography>{t('label.flushDescription')}</Typography>
-                {flushStatus === 'success' && (
-                    <div className={`${styles.bflp_alert} ${styles['bflp_alert--success']}`}>
-                        {t('label.flushSuccess')}
-                    </div>
-                )}
-                {flushStatus === 'error' && (
-                    <div className={`${styles.bflp_alert} ${styles['bflp_alert--error']}`}>
-                        {t('label.flushError')}
-                    </div>
-                )}
+                {/* C-1: always-present live regions for flush operation feedback */}
+                <div role="alert" aria-live="assertive" aria-atomic="true">
+                    {flushStatus === 'error' && (
+                        <div className={`${styles.bflp_alert} ${styles['bflp_alert--error']}`}>
+                            {t('label.flushError')}
+                        </div>
+                    )}
+                </div>
+                <div role="status" aria-live="polite" aria-atomic="true">
+                    {flushStatus === 'success' && (
+                        <div className={`${styles.bflp_alert} ${styles['bflp_alert--success']}`}>
+                            {t('label.flushSuccess')}
+                        </div>
+                    )}
+                </div>
                 <button
                     type="button"
                     className={styles.bflp_flushBtn}

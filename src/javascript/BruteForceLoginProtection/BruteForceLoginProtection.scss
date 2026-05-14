@@ -1,3 +1,16 @@
+// M-11 / Mi-2: visually hidden but accessible to screen readers
+.bflp_sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .bflp_loading {
     display: flex;
     justify-content: center;
@@ -47,10 +60,27 @@
     gap: 6px;
 }
 
+// M-5 / M-7: darkened from #999 (2.85:1) to #767676 (4.54:1) — meets 3:1 UI component threshold
 .bflp_tooltip {
     cursor: help;
-    color: #999;
+    color: #767676;
     font-size: 14px;
+}
+
+// M-5: visible hint text replacing hover-only title tooltip
+.bflp_hint {
+    font-size: 12px;
+    color: #555;
+    margin: 0;
+    line-height: 1.4;
+}
+
+// C-3: inline field-level error shown near the invalid field
+.bflp_fieldError {
+    font-size: 13px;
+    color: #c62828;
+    margin: 0;
+    min-height: 1.4em;
 }
 
 .bflp_input {
@@ -60,8 +90,10 @@
     border-radius: 4px;
     font-size: 14px;
 
+    // M-1: replaced outline:none with a visible custom focus indicator
     &:focus {
-        outline: none;
+        outline: 2px solid #0077cc;
+        outline-offset: 2px;
         border-color: #0077cc;
     }
 }
@@ -76,8 +108,10 @@
     resize: vertical;
     box-sizing: border-box;
 
+    // M-1: replaced outline:none with a visible custom focus indicator
     &:focus {
-        outline: none;
+        outline: 2px solid #0077cc;
+        outline-offset: 2px;
         border-color: #0077cc;
     }
 }
@@ -129,6 +163,12 @@
     transform: translateX(20px);
 }
 
+// M-1: visible focus ring for the toggle's hidden checkbox (shown on the slider)
+.bflp_toggle input:focus-visible + .bflp_toggleSlider {
+    outline: 2px solid #0077cc;
+    outline-offset: 2px;
+}
+
 .bflp_actions {
     display: flex;
     flex-direction: column;
@@ -169,6 +209,11 @@
 
     &:hover:not(:disabled) {
         background-color: #e8f2fb;
+    }
+
+    &:focus-visible {
+        outline: 2px solid #0077cc;
+        outline-offset: 2px;
     }
 
     &:disabled {
@@ -216,9 +261,10 @@
         color: #c62828;
     }
 
+    // M-10: darkened from #8a6d00 (4.28:1) to #6d5500 (~5.3:1) — meets 4.5:1 for small text
     &--tracked {
         background-color: #fff8e1;
-        color: #8a6d00;
+        color: #6d5500;
     }
 }
 
@@ -235,14 +281,20 @@
         background-color: #fdecea;
     }
 
+    &:focus-visible {
+        outline: 2px solid #c62828;
+        outline-offset: 2px;
+    }
+
     &:disabled {
         opacity: 0.5;
         cursor: not-allowed;
     }
 }
 
+// M-8: darkened from #888 (3.54:1) to #666 (5.74:1) — meets 4.5:1 for normal text
 .bflp_emptyState {
-    color: #888;
+    color: #666;
     font-style: italic;
     padding: 12px 0;
 }
@@ -268,6 +320,11 @@
 
     &:hover:not(:disabled) {
         background-color: #e8f2fb;
+    }
+
+    &:focus-visible {
+        outline: 2px solid #0077cc;
+        outline-offset: 2px;
     }
 
     &:disabled {

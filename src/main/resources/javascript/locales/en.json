@@ -30,6 +30,8 @@
     "unblocking": "Unblocking…",
     "noTrackedIps": "No IPs are currently being tracked.",
     "timeToIdle": "Time to idle (seconds)",
-    "timeToIdleTooltip": "Number of seconds without activity before a tracked IP is forgotten. Default: 3600 (1 hour)."
+    "timeToIdleTooltip": "Number of seconds without activity before a tracked IP is forgotten. Default: 3600 (1 hour).",
+    "nbFailedLoginMaxHint": "Minimum value: 1",
+    "loading": "Loading, please wait."
   }
 }
