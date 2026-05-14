@@ -181,18 +181,18 @@ export const BruteForceLoginProtectionAdmin = () => {
             <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
                 <div className={styles.bflp_form}>
                     <div className={styles.bflp_fieldGroup}>
-                        {/* C-2: span with id — input uses aria-labelledby instead of broken aria-label on <label> */}
-                        <span id="bflp-toggle-label" className={styles.bflp_label}>
-                            {t('label.serviceStatus')}
-                        </span>
-                        <label className={styles.bflp_toggle}>
-                            <input
-                                type="checkbox"
-                                aria-labelledby="bflp-toggle-label"
-                                checked={formState.activated}
-                                onChange={e => setFormState(prev => ({...prev, activated: e.target.checked}))}
-                            />
-                            <span className={styles.bflp_toggleSlider}/>
+                        {/* C-2: label wraps both the visible text and the toggle so it has text content
+                            and provides implicit labeling — fixes "empty label" and "no text in label" checks */}
+                        <label className={styles.bflp_toggleLabel}>
+                            <span className={styles.bflp_label}>{t('label.serviceStatus')}</span>
+                            <span className={styles.bflp_toggle}>
+                                <input
+                                    type="checkbox"
+                                    checked={formState.activated}
+                                    onChange={e => setFormState(prev => ({...prev, activated: e.target.checked}))}
+                                />
+                                <span className={styles.bflp_toggleSlider}/>
+                            </span>
                         </label>
                     </div>
 
