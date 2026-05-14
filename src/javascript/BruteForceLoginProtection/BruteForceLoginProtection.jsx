@@ -1,4 +1,4 @@
-import React, {useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
@@ -17,6 +17,11 @@ export const BruteForceLoginProtectionAdmin = () => {
     const [flushStatus, setFlushStatus] = useState(null);
     const [validationError, setValidationError] = useState(null);
     const whitelistRef = useRef(null);
+
+    // MAJ-9: update document.title for SPA route accessibility
+    useEffect(() => {
+        document.title = `${t('label.title')} - Jahia Administration`;
+    }, [t]);
 
     const [formState, setFormState] = useState({
         activated: false,
@@ -230,12 +235,16 @@ export const BruteForceLoginProtectionAdmin = () => {
                             ref={whitelistRef}
                             className={styles.bflp_textarea}
                             rows={6}
-                            aria-describedby="bflp-whitelist-hint bflp-whitelist-error"
+                            autoComplete="off"
+                            required={formState.activated}
+                            aria-required={formState.activated ? 'true' : undefined}
+                            aria-invalid={validationError ? 'true' : undefined}
+                            aria-describedby={`bflp-whitelist-hint${validationError ? ' bflp-whitelist-error' : ''}`}
                             value={formState.whitelistIps}
                             onChange={e => setFormState(prev => ({...prev, whitelistIps: e.target.value}))}
                         />
                         {/* C-3: always-present error container — content change is read by AT when focus is on field */}
-                        <p id="bflp-whitelist-error" className={styles.bflp_fieldError} aria-atomic="true">
+                        <p id="bflp-whitelist-error" className={styles.bflp_fieldError} aria-live="polite" aria-atomic="true">
                             {validationError || ''}
                         </p>
                     </div>
@@ -281,6 +290,7 @@ export const BruteForceLoginProtectionAdmin = () => {
                         )}
                     </div>
                     <Button
+                        type="submit"
                         label={t('label.save')}
                         variant="primary"
                         isDisabled={saving}
