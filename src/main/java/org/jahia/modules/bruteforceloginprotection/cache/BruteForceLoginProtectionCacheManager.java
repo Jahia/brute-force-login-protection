@@ -45,9 +45,15 @@ public class BruteForceLoginProtectionCacheManager {
             bruteForceLoginProtectionCache.removeAll();
             final CacheConfiguration existingConfig = bruteForceLoginProtectionCache.getCacheConfiguration();
             existingConfig.setTimeToIdleSeconds(timeToIdle);
-            existingConfig.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+            if (!hasManagerHeapPool(cacheManager)) {
+                existingConfig.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+            }
             existingConfig.setMemoryStoreEvictionPolicy(MemoryStoreEvictionPolicy.LRU.toString());
         }
+    }
+
+    private static boolean hasManagerHeapPool(CacheManager cacheManager) {
+        return cacheManager.getConfiguration().getMaxBytesLocalHeap() > 0L;
     }
 
     @Deactivate
@@ -88,7 +94,9 @@ public class BruteForceLoginProtectionCacheManager {
         cacheConfiguration.setName(cacheName);
         cacheConfiguration.setTimeToIdleSeconds(timeToIdle);
         cacheConfiguration.setEternal(false);
-        cacheConfiguration.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+        if (!hasManagerHeapPool(cacheManager)) {
+            cacheConfiguration.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+        }
         cacheConfiguration.setMemoryStoreEvictionPolicy(MemoryStoreEvictionPolicy.LRU.toString());
         final Ehcache cache = new Cache(cacheConfiguration);
         cache.setName(cacheName);
