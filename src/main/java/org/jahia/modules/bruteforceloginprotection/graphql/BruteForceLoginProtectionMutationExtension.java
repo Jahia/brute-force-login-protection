@@ -6,6 +6,7 @@ import graphql.annotations.annotationTypes.GraphQLName;
 import graphql.annotations.annotationTypes.GraphQLTypeExtension;
 import org.jahia.api.Constants;
 import org.jahia.api.content.JCRTemplate;
+import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
 import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
@@ -39,34 +40,22 @@ public class BruteForceLoginProtectionMutationExtension {
             @GraphQLName("activated") Boolean activated,
             @GraphQLName("nbFailedLoginMax") Integer nbFailedLoginMax,
             @GraphQLName("whitelistIps") String whitelistIps,
-            @GraphQLName("timeToIdle") @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten") Integer timeToIdle) {
+            @GraphQLName("timeToIdle") @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten") Integer timeToIdle,
+            @GraphQLName("trustProxyHeader") @GraphQLDescription("Trust the X-Forwarded-For header (enable only when behind a trusted reverse proxy)") Boolean trustProxyHeader) {
+        if (whitelistIps != null && !validateWhitelist(whitelistIps)) {
+            LOGGER.warn("Refusing to save brute force login protection settings: invalid CIDR entry in whitelist");
+            return Boolean.FALSE;
+        }
+        if (nbFailedLoginMax != null && nbFailedLoginMax <= 0) {
+            return Boolean.FALSE;
+        }
         try {
             BundleUtils.getOsgiService(JCRTemplate.class, null)
                     .doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                        try {
-                            JCRNodeWrapper node = getOrCreateSettingsNode(session);
-                            node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, Boolean.TRUE.equals(activated));
-                            if (nbFailedLoginMax != null) {
-                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax.longValue());
-                            }
-                            if (whitelistIps != null) {
-                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whitelistIps);
-                            }
-                            if (timeToIdle != null && timeToIdle > 0) {
-                                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, timeToIdle.longValue());
-                            }
-                            session.save();
-                        } catch (RepositoryException e) {
-                            LOGGER.error("Error saving brute force login protection settings", e);
-                        }
+                        writeSettings(session, activated, nbFailedLoginMax, whitelistIps, timeToIdle, trustProxyHeader);
                         return null;
                     });
-            if (timeToIdle != null && timeToIdle > 0) {
-                final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
-                if (cacheManager != null) {
-                    cacheManager.setTimeToIdle(timeToIdle);
-                }
-            }
+            applyLiveTimeToIdle(timeToIdle);
             CacheHelper.flushEhcacheByName(BruteForceLoginProtectionCacheManager.BRUTE_FORCE_LOGIN_PROTECTION_CACHE, true);
             return Boolean.TRUE;
         } catch (RepositoryException e) {
@@ -101,6 +90,39 @@ public class BruteForceLoginProtectionMutationExtension {
         return Boolean.TRUE;
     }
 
+    private static void writeSettings(JCRSessionWrapper session, Boolean activated, Integer nbFailedLoginMax,
+            String whitelistIps, Integer timeToIdle, Boolean trustProxyHeader) {
+        try {
+            JCRNodeWrapper node = getOrCreateSettingsNode(session);
+            node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, Boolean.TRUE.equals(activated));
+            if (nbFailedLoginMax != null) {
+                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax.longValue());
+            }
+            if (whitelistIps != null) {
+                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whitelistIps);
+            }
+            if (timeToIdle != null && timeToIdle > 0) {
+                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, timeToIdle.longValue());
+            }
+            if (trustProxyHeader != null) {
+                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER, trustProxyHeader);
+            }
+            session.save();
+        } catch (RepositoryException e) {
+            LOGGER.error("Error saving brute force login protection settings", e);
+        }
+    }
+
+    private static void applyLiveTimeToIdle(Integer timeToIdle) {
+        if (timeToIdle == null || timeToIdle <= 0) {
+            return;
+        }
+        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
+        if (cacheManager != null) {
+            cacheManager.setTimeToIdle(timeToIdle);
+        }
+    }
+
     private static JCRNodeWrapper getOrCreateSettingsNode(JCRSessionWrapper session) throws RepositoryException {
         if (session.nodeExists(SETTINGS_NODE_PATH)) {
             return session.getNode(SETTINGS_NODE_PATH);
@@ -111,6 +133,25 @@ public class BruteForceLoginProtectionMutationExtension {
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, false);
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, 6L);
         node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
+        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER, false);
         return node;
+    }
+
+    private static boolean validateWhitelist(String whitelistIps) {
+        if (whitelistIps.trim().isEmpty()) {
+            return true;
+        }
+        for (String entry : whitelistIps.split(",")) {
+            final String trimmed = entry.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                new CidrMatcher(trimmed);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+        return true;
     }
 }

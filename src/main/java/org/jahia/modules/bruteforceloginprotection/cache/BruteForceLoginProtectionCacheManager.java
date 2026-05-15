@@ -7,6 +7,7 @@ import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Ehcache;
 import net.sf.ehcache.Element;
 import net.sf.ehcache.config.CacheConfiguration;
+import net.sf.ehcache.store.MemoryStoreEvictionPolicy;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.services.SpringContextSingleton;
 import org.jahia.services.cache.CacheHelper;
@@ -29,6 +30,7 @@ public class BruteForceLoginProtectionCacheManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionCacheManager.class);
     public static final String BRUTE_FORCE_LOGIN_PROTECTION_CACHE = "BruteForceLoginProtectionCache";
+    private static final String NOTIFICATION_KEY_PREFIX = "notif:";
     private Ehcache bruteForceLoginProtectionCache;
 
     @Activate
@@ -41,7 +43,10 @@ public class BruteForceLoginProtectionCacheManager {
             bruteForceLoginProtectionCache = createBruteForceLoginProtectionCache(cacheManager, BRUTE_FORCE_LOGIN_PROTECTION_CACHE, timeToIdle);
         } else {
             bruteForceLoginProtectionCache.removeAll();
-            bruteForceLoginProtectionCache.getCacheConfiguration().setTimeToIdleSeconds(timeToIdle);
+            final CacheConfiguration existingConfig = bruteForceLoginProtectionCache.getCacheConfiguration();
+            existingConfig.setTimeToIdleSeconds(timeToIdle);
+            existingConfig.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+            existingConfig.setMemoryStoreEvictionPolicy(MemoryStoreEvictionPolicy.LRU.toString());
         }
     }
 
@@ -83,6 +88,8 @@ public class BruteForceLoginProtectionCacheManager {
         cacheConfiguration.setName(cacheName);
         cacheConfiguration.setTimeToIdleSeconds(timeToIdle);
         cacheConfiguration.setEternal(false);
+        cacheConfiguration.setMaxEntriesLocalHeap(BruteForceLoginProtectionConstants.MAX_CACHE_ENTRIES);
+        cacheConfiguration.setMemoryStoreEvictionPolicy(MemoryStoreEvictionPolicy.LRU.toString());
         final Ehcache cache = new Cache(cacheConfiguration);
         cache.setName(cacheName);
         return cacheManager.addCacheIfAbsent(cache);
@@ -114,6 +121,22 @@ public class BruteForceLoginProtectionCacheManager {
         }
         final ModuleClassLoaderAwareCacheEntry cacheEntry = new ModuleClassLoaderAwareCacheEntry(settingCacheEntry, "brute-force-login-protection");
         bruteForceLoginProtectionCache.put(new Element(settingCacheEntry.getKey(), cacheEntry));
+    }
+
+    /**
+     * Atomically records a notification marker for the given IP if none is already
+     * present, with the supplied TTL. Returns {@code true} when a notification
+     * should be sent (no prior marker), {@code false} when a marker already exists
+     * and the notification must be throttled.
+     */
+    public boolean tryRecordNotification(String ip, int ttlSeconds) {
+        if (bruteForceLoginProtectionCache == null || ip == null) {
+            return false;
+        }
+        final Element marker = new Element(NOTIFICATION_KEY_PREFIX + ip, Boolean.TRUE);
+        marker.setTimeToLive(ttlSeconds);
+        marker.setEternal(false);
+        return bruteForceLoginProtectionCache.putIfAbsent(marker) == null;
     }
 
     public List<IpCacheEntry> getAllIpCacheEntries() {

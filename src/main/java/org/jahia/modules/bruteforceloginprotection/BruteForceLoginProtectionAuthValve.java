@@ -1,9 +1,10 @@
 package org.jahia.modules.bruteforceloginprotection;
 
-import java.text.SimpleDateFormat;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import javax.jcr.RepositoryException;
 import javax.servlet.http.HttpServletRequest;
@@ -40,9 +41,8 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionAuthValve.class);
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
-    private static final String LOGIN_URI = "/cms/login";
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd 'at' HH:mm:ss z");
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd 'at' HH:mm:ss z");
     private final MailService mailService;
 
     @Reference
@@ -88,19 +88,18 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
     public void invoke(Object context, ValveContext valveContext) throws PipelineException {
         final AuthValveContext authContext = (AuthValveContext) context;
         final HttpServletRequest request = authContext.getRequest();
-        final String requestURI = request.getRequestURI();
-        final boolean isLogin = LOGIN_URI.equals(requestURI);
-        if (isLogin && handleLoginAttempt(request)) {
+        if (handleLoginAttempt(request)) {
             return;
         }
         valveContext.invokeNext(context);
-        if (isLogin) {
-            checkAuthValveResult(request);
-        }
+        checkAuthValveResult(request);
     }
 
     private boolean handleLoginAttempt(HttpServletRequest request) {
         final String remoteAddress = retrieveRemoteAddress(request);
+        if (remoteAddress == null) {
+            return false;
+        }
         final IpCacheEntry ipCacheEntry = bruteForceLoginProtectionCacheManager.getCacheEntryByIp(remoteAddress);
         if (ipCacheEntry == null) {
             return false;
@@ -140,32 +139,35 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
                     activated = (Boolean) activatedCacheEntry.getValue();
                 }
                 final List<CidrMatcher> whitelistIps = getCidrMatcherList(whiteListIpsStr);
-                return activated && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps, true) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
+                return activated && !isRemoteAddressWhitelisted(remoteAddress, whitelistIps) && ipCacheEntry.getNbFailedLogins() >= nbFailedLoginMax;
             }
         }));
     }
 
     private void handleBlockedLogin(HttpServletRequest request, String remoteAddress, IpCacheEntry ipCacheEntry) {
         if (LOGGER.isInfoEnabled()) {
-            LOGGER.info(String.format("The IP %s has tried to much unsuccessful logins, preventing any further tried", remoteAddress).replaceAll("[\r\n]", ""));
+            LOGGER.info("The IP {} has tried too many unsuccessful logins, preventing any further attempts", sanitizeForLog(remoteAddress));
         }
-        if (ipCacheEntry.isNotificationSent() || !mailService.isEnabled()) {
+        if (!mailService.isEnabled() || !ipCacheEntry.markNotificationSent()) {
             return;
         }
-        ipCacheEntry.setNotificationSent(true);
         bruteForceLoginProtectionCacheManager.cacheIp(ipCacheEntry);
+        if (!bruteForceLoginProtectionCacheManager.tryRecordNotification(remoteAddress,
+                BruteForceLoginProtectionConstants.NOTIFICATION_THROTTLE_SECONDS)) {
+            return;
+        }
         final String serverName = request.getServerName();
         final String sender = mailService.defaultSender();
         final String recipient = mailService.defaultRecipient();
         final String subject = "[%s] Login blocked for IP %s";
         final String body = "Hi,\n"
                 + "\n"
-                + "The IP %s has tried to much unsuccessful logins, preventing any further tried.\n"
+                + "The IP %s has tried too many unsuccessful logins, preventing any further attempts.\n"
                 + "\n"
                 + "    Connection IP     : %s\n"
                 + "\n"
                 + "\n"
-                + "This email is meant to raise awareness about the secuirty of your services \n"
+                + "This email is meant to raise awareness about the security of your services \n"
                 + "and to help you to protect them.\n"
                 + "\n"
                 + "Regards,";
@@ -179,6 +181,9 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
                 || LoginEngineAuthValveImpl.UNKNOWN_USER.equals(valveResult))) {
 
             final String remoteAddress = retrieveRemoteAddress(request);
+            if (remoteAddress == null) {
+                return;
+            }
             String site = request.getParameter("site");
             if (StringUtils.isEmpty(site)) {
                 site = "systemsite";
@@ -189,33 +194,64 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
                 ipCacheEntry = new IpCacheEntry(remoteAddress);
             }
 
-            int nbFailedLogins = ipCacheEntry.getNbFailedLogins() + 1;
-            ipCacheEntry.setNbFailedLogins(nbFailedLogins);
+            final int nbFailedLogins = ipCacheEntry.incrementNbFailedLogins();
             bruteForceLoginProtectionCacheManager.cacheIp(ipCacheEntry);
 
-            final String serverName = request.getServerName();
-            final Date loginDate = new Date();
             if (LOGGER.isInfoEnabled()) {
-                LOGGER.info(String.format("Incorrect login from %s on the server %s, site %s, at %s: %d times", remoteAddress, serverName, site, dateFormat.format(loginDate), nbFailedLogins).replaceAll("[\r\n]", ""));
+                LOGGER.info("Incorrect login from {} on the server {}, site {}, at {}: {} times",
+                        sanitizeForLog(remoteAddress),
+                        sanitizeForLog(request.getServerName()),
+                        sanitizeForLog(site),
+                        ZonedDateTime.now(ZoneId.systemDefault()).format(DATE_FORMAT),
+                        nbFailedLogins);
             }
         }
     }
 
     private String retrieveRemoteAddress(HttpServletRequest request) {
-        String remoteAddress = request.getHeader(REMOTE_ADDRESS_HEADER);
-        if (remoteAddress == null) {
-            remoteAddress = request.getRemoteAddr();
+        if (isTrustProxyHeaderEnabled()) {
+            final String headerValue = request.getHeader(REMOTE_ADDRESS_HEADER);
+            if (StringUtils.isNotBlank(headerValue)) {
+                final String[] parts = headerValue.split(KEY_SEPARATOR);
+                final String first = parts[0].trim();
+                if (!first.isEmpty()) {
+                    return first;
+                }
+            }
         }
-        return remoteAddress;
+        return request.getRemoteAddr();
     }
 
-    private static boolean isRemoteAddressWhitelisted(String remoteAddress, List<CidrMatcher> whitelistIps, boolean useFirstRemoteAddress) {
-        final String[] remoteAddresses = remoteAddress.split(KEY_SEPARATOR);
-        final String remoteAddressToCheck = useFirstRemoteAddress
-                ? remoteAddresses[0].trim()
-                : remoteAddresses[remoteAddresses.length - 1].trim();
+    private boolean isTrustProxyHeaderEnabled() {
+        final SettingCacheEntry cached = bruteForceLoginProtectionCacheManager.getCacheEntryByProperty(
+                BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER);
+        if (cached != null) {
+            return Boolean.TRUE.equals(cached.getValue());
+        }
+        try {
+            final Boolean value = JCRTemplate.getInstance().doExecuteWithSystemSessionAsUser(null, null, null, session -> {
+                if (!session.nodeExists(BruteForceLoginProtectionConstants.NODE_PATH)) {
+                    return Boolean.FALSE;
+                }
+                final JCRNodeWrapper node = session.getNode(BruteForceLoginProtectionConstants.NODE_PATH);
+                if (!node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER)) {
+                    return Boolean.FALSE;
+                }
+                return node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER).getBoolean();
+            });
+            final Boolean resolved = value != null ? value : Boolean.FALSE;
+            bruteForceLoginProtectionCacheManager.cacheSetting(new SettingCacheEntry(
+                    BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER, resolved));
+            return resolved;
+        } catch (RepositoryException e) {
+            LOGGER.debug("Could not read trust_x_forwarded_for from JCR, defaulting to false", e);
+            return false;
+        }
+    }
+
+    private static boolean isRemoteAddressWhitelisted(String remoteAddress, List<CidrMatcher> whitelistIps) {
         for (CidrMatcher matcher : whitelistIps) {
-            if (matcher.matches(remoteAddressToCheck)) {
+            if (matcher.matches(remoteAddress)) {
                 return true;
             }
         }
@@ -238,5 +274,12 @@ public final class BruteForceLoginProtectionAuthValve extends BaseAuthValve {
             }
         }
         return matchers;
+    }
+
+    private static String sanitizeForLog(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\r\n]", "");
     }
 }

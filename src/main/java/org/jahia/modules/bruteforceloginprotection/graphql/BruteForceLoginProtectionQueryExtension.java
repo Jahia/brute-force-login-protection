@@ -55,7 +55,9 @@ public class BruteForceLoginProtectionQueryExtension {
                             int timeToIdle = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE)
                                     ? (int) node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE).getLong()
                                     : BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
-                            return new GqlSettings(activated, nbFailedLoginMax, whitelistIps, timeToIdle);
+                            boolean trustProxyHeader = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER)
+                                    && node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER).getBoolean();
+                            return new GqlSettings(activated, nbFailedLoginMax, whitelistIps, timeToIdle, trustProxyHeader);
                         } catch (RepositoryException e) {
                             LOGGER.error("Error reading brute force login protection settings", e);
                             return GqlSettings.defaults();
@@ -94,16 +96,18 @@ public class BruteForceLoginProtectionQueryExtension {
         private final int nbFailedLoginMax;
         private final String whitelistIps;
         private final int timeToIdle;
+        private final boolean trustProxyHeader;
 
-        public GqlSettings(boolean activated, int nbFailedLoginMax, String whitelistIps, int timeToIdle) {
+        public GqlSettings(boolean activated, int nbFailedLoginMax, String whitelistIps, int timeToIdle, boolean trustProxyHeader) {
             this.activated = activated;
             this.nbFailedLoginMax = nbFailedLoginMax;
             this.whitelistIps = whitelistIps;
             this.timeToIdle = timeToIdle;
+            this.trustProxyHeader = trustProxyHeader;
         }
 
         public static GqlSettings defaults() {
-            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128", BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
+            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128", BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE, false);
         }
 
         @GraphQLField
@@ -132,6 +136,13 @@ public class BruteForceLoginProtectionQueryExtension {
         @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten from the cache")
         public int getTimeToIdle() {
             return timeToIdle;
+        }
+
+        @GraphQLField
+        @GraphQLName("trustProxyHeader")
+        @GraphQLDescription("Whether the X-Forwarded-For header is trusted as the client IP source")
+        public boolean isTrustProxyHeader() {
+            return trustProxyHeader;
         }
     }
 

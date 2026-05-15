@@ -1,6 +1,8 @@
 package org.jahia.modules.bruteforceloginprotection.cache;
 
 import java.io.Serializable;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  *
@@ -9,26 +11,26 @@ import java.io.Serializable;
 public final class IpCacheEntry extends AbstractCacheEntry implements Serializable {
 
     private static final long serialVersionUID = -1432235243384204528L;
-    private int nbFailedLogins;
-    private boolean notificationSent;
+    private final AtomicInteger nbFailedLogins = new AtomicInteger();
+    private final AtomicBoolean notificationSent = new AtomicBoolean();
 
     public IpCacheEntry(String ip) {
         setKey(ip);
     }
 
     public int getNbFailedLogins() {
-        return nbFailedLogins;
+        return nbFailedLogins.get();
     }
 
-    public void setNbFailedLogins(int nbFailedLogins) {
-        this.nbFailedLogins = nbFailedLogins;
+    public int incrementNbFailedLogins() {
+        return nbFailedLogins.incrementAndGet();
     }
 
     public boolean isNotificationSent() {
-        return notificationSent;
+        return notificationSent.get();
     }
 
-    public void setNotificationSent(boolean notificationSent) {
-        this.notificationSent = notificationSent;
+    public boolean markNotificationSent() {
+        return notificationSent.compareAndSet(false, true);
     }
 }

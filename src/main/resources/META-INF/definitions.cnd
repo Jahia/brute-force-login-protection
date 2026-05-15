@@ -6,3 +6,4 @@
  - activated (boolean)
  - nb_failed_login_max (long) = 6
  - time_to_idle (long) = 3600
+ - trust_x_forwarded_for (boolean) = false
