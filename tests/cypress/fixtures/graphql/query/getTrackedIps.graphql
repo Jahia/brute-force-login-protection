@@ -1,7 +1,0 @@
-query {
-    bruteForceLoginProtectionTrackedIps {
-        ip
-        nbFailedLogins
-        blocked
-    }
-}

@@ -1,0 +1,15 @@
+mutation saveJail(
+    $name: String!
+    $enabled: Boolean
+    $maxRetry: Int
+    $findTimeSeconds: Int
+    $banTimeSeconds: Int
+) {
+    bruteForceLoginProtectionSaveJail(
+        name: $name
+        enabled: $enabled
+        maxRetry: $maxRetry
+        findTimeSeconds: $findTimeSeconds
+        banTimeSeconds: $banTimeSeconds
+    )
+}

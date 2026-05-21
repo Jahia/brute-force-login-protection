@@ -1,8 +1,0 @@
-mutation saveSettings($activated: Boolean!, $nbFailedLoginMax: Int!, $whitelistIps: String!, $timeToIdle: Int) {
-    bruteForceLoginProtectionSaveSettings(
-        activated: $activated
-        nbFailedLoginMax: $nbFailedLoginMax
-        whitelistIps: $whitelistIps
-        timeToIdle: $timeToIdle
-    )
-}

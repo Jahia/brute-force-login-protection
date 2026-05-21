@@ -1,3 +1,0 @@
-mutation unblockIp($ip: String!) {
-    bruteForceLoginProtectionUnblockIp(ip: $ip)
-}

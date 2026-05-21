@@ -3,155 +3,109 @@ package org.jahia.modules.bruteforceloginprotection.graphql;
 import graphql.annotations.annotationTypes.GraphQLDescription;
 import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
+import graphql.annotations.annotationTypes.GraphQLNonNull;
 import graphql.annotations.annotationTypes.GraphQLTypeExtension;
-import org.jahia.api.Constants;
-import org.jahia.api.content.JCRTemplate;
-import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
-import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
-import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
+import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
+import org.jahia.modules.bruteforceloginprotection.core.BruteForceTracker;
+import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
-import org.jahia.services.cache.CacheHelper;
-import org.jahia.services.content.JCRNodeWrapper;
-import org.jahia.services.content.JCRSessionWrapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.jcr.RepositoryException;
+import java.util.List;
 
 @GraphQLTypeExtension(DXGraphQLProvider.Mutation.class)
 @GraphQLName("BruteForceLoginProtectionMutations")
 @GraphQLDescription("Brute Force Login Protection mutations")
 public class BruteForceLoginProtectionMutationExtension {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionMutationExtension.class);
-
-    static final String SETTINGS_NODE_PATH = BruteForceLoginProtectionConstants.NODE_PATH;
-
     private BruteForceLoginProtectionMutationExtension() {
+        // utility
     }
 
     @GraphQLField
-    @GraphQLName("bruteForceLoginProtectionSaveSettings")
-    @GraphQLDescription("Saves the brute force login protection settings and flushes the cache")
+    @GraphQLName("bruteForceLoginProtectionSaveGlobalSettings")
     @GraphQLRequiresPermission("admin")
-    public static Boolean saveSettings(
+    public static Boolean saveGlobalSettings(
             @GraphQLName("activated") Boolean activated,
-            @GraphQLName("nbFailedLoginMax") Integer nbFailedLoginMax,
             @GraphQLName("whitelistIps") String whitelistIps,
-            @GraphQLName("timeToIdle") @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten") Integer timeToIdle,
-            @GraphQLName("trustProxyHeader") @GraphQLDescription("Trust the X-Forwarded-For header (enable only when behind a trusted reverse proxy)") Boolean trustProxyHeader) {
-        if (whitelistIps != null && !validateWhitelist(whitelistIps)) {
-            LOGGER.warn("Refusing to save brute force login protection settings: invalid CIDR entry in whitelist");
-            return Boolean.FALSE;
-        }
-        if (nbFailedLoginMax != null && nbFailedLoginMax <= 0) {
-            return Boolean.FALSE;
-        }
-        try {
-            BundleUtils.getOsgiService(JCRTemplate.class, null)
-                    .doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                        writeSettings(session, activated, nbFailedLoginMax, whitelistIps, timeToIdle, trustProxyHeader);
-                        return null;
-                    });
-            applyLiveTimeToIdle(timeToIdle);
-            CacheHelper.flushEhcacheByName(BruteForceLoginProtectionCacheManager.BRUTE_FORCE_LOGIN_PROTECTION_CACHE, true);
-            return Boolean.TRUE;
-        } catch (RepositoryException e) {
-            LOGGER.error("Error saving brute force login protection settings", e);
-            return Boolean.FALSE;
-        }
+            @GraphQLName("ignorePatterns") List<String> ignorePatterns,
+            @GraphQLName("trustProxyHeader") Boolean trustProxyHeader,
+            @GraphQLName("emailEnabled") Boolean emailEnabled,
+            @GraphQLName("emailRecipient") String emailRecipient,
+            @GraphQLName("webhookUrl") String webhookUrl,
+            @GraphQLName("webhookSecret") @GraphQLDescription("null = leave unchanged; \"\" = clear") String webhookSecret,
+            @GraphQLName("auditLogMaxEntries") Integer auditLogMaxEntries,
+            @GraphQLName("recidiveFactor") Double recidiveFactor,
+            @GraphQLName("maxBanTimeSeconds") Integer maxBanTimeSeconds) {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        if (svc == null) return Boolean.FALSE;
+        return svc.saveGlobalSettings(activated, whitelistIps, ignorePatterns, trustProxyHeader,
+                emailEnabled, emailRecipient, webhookUrl, webhookSecret, auditLogMaxEntries,
+                recidiveFactor, maxBanTimeSeconds);
     }
 
     @GraphQLField
-    @GraphQLName("bruteForceLoginProtectionFlushCache")
-    @GraphQLDescription("Flushes the brute force login protection cache")
+    @GraphQLName("bruteForceLoginProtectionSaveJail")
     @GraphQLRequiresPermission("admin")
-    public static Boolean flushCache() {
-        CacheHelper.flushEhcacheByName(BruteForceLoginProtectionCacheManager.BRUTE_FORCE_LOGIN_PROTECTION_CACHE, true);
-        return Boolean.TRUE;
+    public static Boolean saveJail(
+            @GraphQLName("name") @GraphQLNonNull String name,
+            @GraphQLName("enabled") Boolean enabled,
+            @GraphQLName("maxRetry") Integer maxRetry,
+            @GraphQLName("findTimeSeconds") Integer findTimeSeconds,
+            @GraphQLName("banTimeSeconds") Integer banTimeSeconds) {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        if (svc == null) return Boolean.FALSE;
+        return svc.saveJail(name, enabled, maxRetry, findTimeSeconds, banTimeSeconds);
     }
 
     @GraphQLField
-    @GraphQLName("bruteForceLoginProtectionUnblockIp")
-    @GraphQLDescription("Removes a single IP from the tracking cache, unblocking it")
+    @GraphQLName("bruteForceLoginProtectionDeleteJail")
     @GraphQLRequiresPermission("admin")
-    public static Boolean unblockIp(@GraphQLName("ip") @GraphQLDescription("The IP to unblock") String ip) {
-        if (ip == null || ip.trim().isEmpty()) {
-            return Boolean.FALSE;
-        }
-        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
-        if (cacheManager == null) {
-            LOGGER.warn("BruteForceLoginProtectionCacheManager OSGi service is not available");
-            return Boolean.FALSE;
-        }
-        cacheManager.clearCacheEntryByKey(ip.trim());
-        return Boolean.TRUE;
+    public static Boolean deleteJail(@GraphQLName("name") @GraphQLNonNull String name) {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        if (svc == null) return Boolean.FALSE;
+        return svc.deleteJail(name);
     }
 
-    private static void writeSettings(JCRSessionWrapper session, Boolean activated, Integer nbFailedLoginMax,
-            String whitelistIps, Integer timeToIdle, Boolean trustProxyHeader) {
-        try {
-            JCRNodeWrapper node = getOrCreateSettingsNode(session);
-            node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, Boolean.TRUE.equals(activated));
-            if (nbFailedLoginMax != null) {
-                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, nbFailedLoginMax.longValue());
-            }
-            if (whitelistIps != null) {
-                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, whitelistIps);
-            }
-            if (timeToIdle != null && timeToIdle > 0) {
-                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, timeToIdle.longValue());
-            }
-            if (trustProxyHeader != null) {
-                node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER, trustProxyHeader);
-            }
-            session.save();
-        } catch (RepositoryException e) {
-            LOGGER.error("Error saving brute force login protection settings", e);
-        }
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionUnbanIp")
+    @GraphQLRequiresPermission("admin")
+    public static Boolean unbanIp(@GraphQLName("ip") @GraphQLNonNull String ip) {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Boolean.FALSE;
+        return tracker.unbanIp(ip);
     }
 
-    private static void applyLiveTimeToIdle(Integer timeToIdle) {
-        if (timeToIdle == null || timeToIdle <= 0) {
-            return;
-        }
-        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
-        if (cacheManager != null) {
-            cacheManager.setTimeToIdle(timeToIdle);
-        }
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionBanIp")
+    @GraphQLRequiresPermission("admin")
+    public static Boolean banIp(
+            @GraphQLName("ip") @GraphQLNonNull String ip,
+            @GraphQLName("jail") String jail,
+            @GraphQLName("durationSeconds") Integer durationSeconds,
+            @GraphQLName("reason") String reason) {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Boolean.FALSE;
+        return tracker.banManually(ip, jail, durationSeconds, reason);
     }
 
-    private static JCRNodeWrapper getOrCreateSettingsNode(JCRSessionWrapper session) throws RepositoryException {
-        if (session.nodeExists(SETTINGS_NODE_PATH)) {
-            return session.getNode(SETTINGS_NODE_PATH);
-        }
-        JCRNodeWrapper settingsRoot = session.getNode(BruteForceLoginProtectionConstants.NODE_SETTINGS_PATH);
-        JCRNodeWrapper node = settingsRoot.addNode(BruteForceLoginProtectionConstants.NODE_NAME, "jnt:bruteForceLoginProtection");
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS, "127.0.0.1/32,::1/128");
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED, false);
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX, 6L);
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE, BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE);
-        node.setProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER, false);
-        return node;
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionFlush")
+    @GraphQLDescription("Clear all bans + windows from cluster + JCR")
+    @GraphQLRequiresPermission("admin")
+    public static Boolean flush() {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Boolean.FALSE;
+        return tracker.flushAll();
     }
 
-    private static boolean validateWhitelist(String whitelistIps) {
-        if (whitelistIps.trim().isEmpty()) {
-            return true;
-        }
-        for (String entry : whitelistIps.split(",")) {
-            final String trimmed = entry.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
-            try {
-                new CidrMatcher(trimmed);
-            } catch (IllegalArgumentException e) {
-                return false;
-            }
-        }
-        return true;
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionClearAuditLog")
+    @GraphQLRequiresPermission("admin")
+    public static Boolean clearAuditLog() {
+        AuditLogger audit = BundleUtils.getOsgiService(AuditLogger.class, null);
+        if (audit == null) return Boolean.FALSE;
+        return audit.clear();
     }
 }

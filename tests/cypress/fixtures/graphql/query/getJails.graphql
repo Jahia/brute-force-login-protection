@@ -1,0 +1,9 @@
+query getJails {
+    bruteForceLoginProtectionJails {
+        name
+        enabled
+        maxRetry
+        findTimeSeconds
+        banTimeSeconds
+    }
+}

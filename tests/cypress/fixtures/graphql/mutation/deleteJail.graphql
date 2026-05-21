@@ -1,0 +1,3 @@
+mutation deleteJail($name: String!) {
+    bruteForceLoginProtectionDeleteJail(name: $name)
+}

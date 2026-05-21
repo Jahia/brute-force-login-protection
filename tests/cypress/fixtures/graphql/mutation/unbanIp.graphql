@@ -1,0 +1,3 @@
+mutation unbanIp($ip: String!) {
+    bruteForceLoginProtectionUnbanIp(ip: $ip)
+}

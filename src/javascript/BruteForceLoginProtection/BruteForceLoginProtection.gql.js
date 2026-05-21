@@ -1,40 +1,163 @@
 import {gql} from '@apollo/client';
 
-export const GET_SETTINGS = gql`
-    query {
-        bruteForceLoginProtectionSettings {
+export const GET_GLOBAL_SETTINGS = gql`
+    query GetGlobalSettings {
+        bruteForceLoginProtectionGlobalSettings {
             activated
-            nbFailedLoginMax
             whitelistIps
-            timeToIdle
+            ignorePatterns
+            trustProxyHeader
+            emailEnabled
+            emailRecipient
+            webhookUrl
+            webhookSecretConfigured
+            auditLogMaxEntries
+            recidiveFactor
+            maxBanTimeSeconds
         }
     }
 `;
 
-export const SAVE_SETTINGS = gql`
-    mutation SaveSettings($activated: Boolean!, $nbFailedLoginMax: Int!, $whitelistIps: String!, $timeToIdle: Int) {
-        bruteForceLoginProtectionSaveSettings(activated: $activated, nbFailedLoginMax: $nbFailedLoginMax, whitelistIps: $whitelistIps, timeToIdle: $timeToIdle)
+export const SAVE_GLOBAL_SETTINGS = gql`
+    mutation SaveGlobalSettings(
+        $activated: Boolean,
+        $whitelistIps: String,
+        $ignorePatterns: [String!],
+        $trustProxyHeader: Boolean,
+        $emailEnabled: Boolean,
+        $emailRecipient: String,
+        $webhookUrl: String,
+        $webhookSecret: String,
+        $auditLogMaxEntries: Int,
+        $recidiveFactor: Float,
+        $maxBanTimeSeconds: Int
+    ) {
+        bruteForceLoginProtectionSaveGlobalSettings(
+            activated: $activated,
+            whitelistIps: $whitelistIps,
+            ignorePatterns: $ignorePatterns,
+            trustProxyHeader: $trustProxyHeader,
+            emailEnabled: $emailEnabled,
+            emailRecipient: $emailRecipient,
+            webhookUrl: $webhookUrl,
+            webhookSecret: $webhookSecret,
+            auditLogMaxEntries: $auditLogMaxEntries,
+            recidiveFactor: $recidiveFactor,
+            maxBanTimeSeconds: $maxBanTimeSeconds
+        )
     }
 `;
 
-export const FLUSH_CACHE = gql`
-    mutation {
-        bruteForceLoginProtectionFlushCache
+export const GET_JAILS = gql`
+    query GetJails {
+        bruteForceLoginProtectionJails {
+            name
+            enabled
+            maxRetry
+            findTimeSeconds
+            banTimeSeconds
+        }
     }
 `;
 
-export const GET_TRACKED_IPS = gql`
-    query {
-        bruteForceLoginProtectionTrackedIps {
+export const SAVE_JAIL = gql`
+    mutation SaveJail($name: String!, $enabled: Boolean, $maxRetry: Int, $findTimeSeconds: Int, $banTimeSeconds: Int) {
+        bruteForceLoginProtectionSaveJail(
+            name: $name,
+            enabled: $enabled,
+            maxRetry: $maxRetry,
+            findTimeSeconds: $findTimeSeconds,
+            banTimeSeconds: $banTimeSeconds
+        )
+    }
+`;
+
+export const DELETE_JAIL = gql`
+    mutation DeleteJail($name: String!) {
+        bruteForceLoginProtectionDeleteJail(name: $name)
+    }
+`;
+
+export const GET_BANNED_IPS = gql`
+    query GetBannedIps {
+        bruteForceLoginProtectionBannedIps {
             ip
-            nbFailedLogins
-            blocked
+            jail
+            source
+            bannedAt
+            bannedUntil
+            banCount
+            reason
+            remainingSeconds
         }
     }
 `;
 
-export const UNBLOCK_IP = gql`
-    mutation UnblockIp($ip: String!) {
-        bruteForceLoginProtectionUnblockIp(ip: $ip)
+export const GET_TRACKED_WINDOWS = gql`
+    query GetTrackedWindows {
+        bruteForceLoginProtectionTrackedWindows {
+            ip
+            jail
+            failuresInWindow
+            oldestFailureAt
+            lastFailureAt
+        }
+    }
+`;
+
+export const UNBAN_IP = gql`
+    mutation UnbanIp($ip: String!) {
+        bruteForceLoginProtectionUnbanIp(ip: $ip)
+    }
+`;
+
+export const BAN_IP = gql`
+    mutation BanIp($ip: String!, $jail: String, $durationSeconds: Int, $reason: String) {
+        bruteForceLoginProtectionBanIp(ip: $ip, jail: $jail, durationSeconds: $durationSeconds, reason: $reason)
+    }
+`;
+
+export const FLUSH = gql`
+    mutation Flush {
+        bruteForceLoginProtectionFlush
+    }
+`;
+
+export const GET_AUDIT_LOG = gql`
+    query GetAuditLog($limit: Int) {
+        bruteForceLoginProtectionAuditLog(limit: $limit) {
+            id
+            timestamp
+            event
+            ip
+            jail
+            source
+            details
+        }
+    }
+`;
+
+export const CLEAR_AUDIT_LOG = gql`
+    mutation ClearAuditLog {
+        bruteForceLoginProtectionClearAuditLog
+    }
+`;
+
+export const GET_BAN_ACTIONS = gql`
+    query GetBanActions {
+        bruteForceLoginProtectionBanActions {
+            name
+            className
+            priority
+        }
+    }
+`;
+
+export const GET_CLUSTER_STATUS = gql`
+    query GetClusterStatus {
+        bruteForceLoginProtectionClusterStatus {
+            hazelcastRunning
+            nodeCount
+        }
     }
 `;

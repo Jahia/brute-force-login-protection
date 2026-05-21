@@ -1,8 +1,0 @@
-query {
-    bruteForceLoginProtectionSettings {
-        activated
-        nbFailedLoginMax
-        whitelistIps
-        timeToIdle
-    }
-}

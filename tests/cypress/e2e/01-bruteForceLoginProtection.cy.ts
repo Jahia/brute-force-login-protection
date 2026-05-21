@@ -3,236 +3,277 @@ import {DocumentNode} from 'graphql';
 describe('Brute Force Login Protection', () => {
     const adminPath = '/jahia/administration/bruteForceLoginProtection';
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const getSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getSettings.graphql');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const getTrackedIps: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getTrackedIps.graphql');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const saveSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/saveSettings.graphql');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const flushCache: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/flushCache.graphql');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const unblockIp: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/unblockIp.graphql');
+    /* eslint-disable @typescript-eslint/no-var-requires */
+    const getGlobalSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getGlobalSettings.graphql');
+    const getJails: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getJails.graphql');
+    const getBannedIps: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getBannedIps.graphql');
+    const getAuditLog: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getAuditLog.graphql');
+    const getClusterStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getClusterStatus.graphql');
+    const saveGlobalSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/saveGlobalSettings.graphql');
+    const saveJail: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/saveJail.graphql');
+    const deleteJail: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/deleteJail.graphql');
+    const banIp: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/banIp.graphql');
+    const unbanIp: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/unbanIp.graphql');
+    const flush: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/flush.graphql');
+    const clearAuditLog: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/clearAuditLog.graphql');
+    /* eslint-enable @typescript-eslint/no-var-requires */
 
     before(() => {
         cy.login();
     });
 
     afterEach(() => {
-        cy.apollo({mutation: flushCache});
+        cy.apollo({mutation: flush});
     });
 
-    it('returns settings via GraphQL', () => {
-        cy.apollo({query: getSettings})
-            .its('data.bruteForceLoginProtectionSettings')
+    it('returns global settings via GraphQL', () => {
+        cy.apollo({query: getGlobalSettings})
+            .its('data.bruteForceLoginProtectionGlobalSettings')
             .should(settings => {
                 expect(settings).to.have.property('activated');
-                expect(settings).to.have.property('nbFailedLoginMax');
                 expect(settings).to.have.property('whitelistIps');
-                expect(settings).to.have.property('timeToIdle');
+                expect(settings).to.have.property('ignorePatterns');
+                expect(settings).to.have.property('trustProxyHeader');
+                expect(settings).to.have.property('recidiveFactor');
+                expect(settings).to.have.property('maxBanTimeSeconds');
             });
     });
 
-    it('saves settings via GraphQL and returns true', () => {
+    it('saves global settings via GraphQL and returns true', () => {
         cy.apollo({
-            mutation: saveSettings,
+            mutation: saveGlobalSettings,
             variables: {
                 activated: true,
-                nbFailedLoginMax: 5,
-                whitelistIps: '127.0.0.1/32,::1/128'
+                whitelistIps: '127.0.0.1/32,::1/128',
+                recidiveFactor: 2.0,
+                maxBanTimeSeconds: 86400
             }
         })
-            .its('data.bruteForceLoginProtectionSaveSettings')
+            .its('data.bruteForceLoginProtectionSaveGlobalSettings')
             .should('eq', true);
     });
 
-    it('saves settings and reads them back consistently', () => {
-        const threshold = 8;
+    it('saves global settings and reads them back consistently', () => {
         cy.apollo({
-            mutation: saveSettings,
+            mutation: saveGlobalSettings,
             variables: {
                 activated: true,
-                nbFailedLoginMax: threshold,
-                whitelistIps: '127.0.0.1/32,::1/128,192.168.0.0/24'
+                whitelistIps: '127.0.0.1/32,::1/128,192.168.0.0/24',
+                trustProxyHeader: true,
+                recidiveFactor: 3.0,
+                maxBanTimeSeconds: 7200
             }
         });
-        cy.apollo({query: getSettings})
-            .its('data.bruteForceLoginProtectionSettings')
+        cy.apollo({query: getGlobalSettings})
+            .its('data.bruteForceLoginProtectionGlobalSettings')
             .should(settings => {
                 expect(settings.activated).to.eq(true);
-                expect(settings.nbFailedLoginMax).to.eq(threshold);
                 expect(settings.whitelistIps).to.include('192.168.0.0/24');
+                expect(settings.trustProxyHeader).to.eq(true);
+                expect(settings.recidiveFactor).to.eq(3.0);
+                expect(settings.maxBanTimeSeconds).to.eq(7200);
             });
     });
 
-    it('saves timeToIdle via GraphQL and reads it back consistently', () => {
-        const tti = 1800;
-        cy.apollo({
-            mutation: saveSettings,
-            variables: {
-                activated: true,
-                nbFailedLoginMax: 6,
-                whitelistIps: '127.0.0.1/32,::1/128',
-                timeToIdle: tti
-            }
-        });
-        cy.apollo({query: getSettings})
-            .its('data.bruteForceLoginProtectionSettings')
-            .should(settings => {
-                expect(settings.timeToIdle).to.eq(tti);
+    it('lists jails and includes the bootstrapped login jail', () => {
+        cy.apollo({query: getJails})
+            .its('data.bruteForceLoginProtectionJails')
+            .should((jails: Array<{name: string}>) => {
+                expect(jails).to.be.an('array');
+                const names = jails.map(j => j.name);
+                expect(names).to.include('login');
             });
     });
 
-    it('flushes the cache via GraphQL and returns true', () => {
-        cy.apollo({mutation: flushCache})
-            .its('data.bruteForceLoginProtectionFlushCache')
-            .should('eq', true);
-    });
-
-    it('returns an empty tracked IPs list via GraphQL when no failures occurred', () => {
-        cy.apollo({mutation: flushCache});
-        cy.apollo({query: getTrackedIps})
-            .its('data.bruteForceLoginProtectionTrackedIps')
-            .should('be.an', 'array');
-    });
-
-    it('unblocks an IP via GraphQL and returns true', () => {
+    it('creates and updates a jail', () => {
         cy.apollo({
-            mutation: unblockIp,
-            variables: {ip: '10.0.0.1'}
+            mutation: saveJail,
+            variables: {
+                name: 'test',
+                enabled: true,
+                maxRetry: 3,
+                findTimeSeconds: 60,
+                banTimeSeconds: 120
+            }
         })
-            .its('data.bruteForceLoginProtectionUnblockIp')
+            .its('data.bruteForceLoginProtectionSaveJail')
             .should('eq', true);
+
+        cy.apollo({query: getJails})
+            .its('data.bruteForceLoginProtectionJails')
+            .should((jails: Array<{name: string; maxRetry: number}>) => {
+                const found = jails.find(j => j.name === 'test');
+                expect(found, 'jail "test" must exist').to.exist;
+                expect(found.maxRetry).to.eq(3);
+            });
     });
 
-    it('shows the admin panel with all form fields', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        cy.get('#bflp-max').should('be.visible');
-        cy.get('#bflp-whitelist').should('be.visible');
-        cy.get('#bflp-tti').should('be.visible');
-    });
-
-    it('shows the save button in the admin panel', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        cy.contains('button', 'Save').should('be.visible');
-    });
-
-    it('shows the tracked IPs section with flush cache button', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        cy.contains('button', 'Flush cache').should('be.visible');
-    });
-
-    it('updates the failed login threshold via the UI and saves successfully', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        cy.get('#bflp-max').should('be.visible');
-        cy.get('#bflp-max').clear();
-        cy.get('#bflp-max').type('10');
-
-        cy.contains('button', 'Save').click();
-
-        cy.get('[class*="bflp_alert--success"]').should('be.visible');
-    });
-
-    it('disables the service via the UI toggle and saves', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        // Ensure service is enabled first via GraphQL
+    it('deletes a jail', () => {
         cy.apollo({
-            mutation: saveSettings,
+            mutation: saveJail,
+            variables: {name: 'test', enabled: true, maxRetry: 3, findTimeSeconds: 60, banTimeSeconds: 120}
+        });
+        cy.apollo({mutation: deleteJail, variables: {name: 'test'}})
+            .its('data.bruteForceLoginProtectionDeleteJail')
+            .should('eq', true);
+
+        cy.apollo({query: getJails})
+            .its('data.bruteForceLoginProtectionJails')
+            .should((jails: Array<{name: string}>) => {
+                const names = jails.map(j => j.name);
+                expect(names).to.not.include('test');
+            });
+    });
+
+    it('banIp + unbanIp round-trip', () => {
+        cy.apollo({
+            mutation: banIp,
+            variables: {ip: '10.0.0.99', jail: 'login', durationSeconds: 60, reason: 'cypress test'}
+        })
+            .its('data.bruteForceLoginProtectionBanIp')
+            .should('eq', true);
+
+        cy.apollo({query: getBannedIps})
+            .its('data.bruteForceLoginProtectionBannedIps')
+            .should((bans: Array<{ip: string}>) => {
+                const ips = bans.map(b => b.ip);
+                expect(ips).to.include('10.0.0.99');
+            });
+
+        cy.apollo({mutation: unbanIp, variables: {ip: '10.0.0.99'}})
+            .its('data.bruteForceLoginProtectionUnbanIp')
+            .should('eq', true);
+
+        cy.apollo({query: getBannedIps})
+            .its('data.bruteForceLoginProtectionBannedIps')
+            .should((bans: Array<{ip: string}>) => {
+                const ips = bans.map(b => b.ip);
+                expect(ips).to.not.include('10.0.0.99');
+            });
+    });
+
+    it('audit log records the ban', () => {
+        cy.apollo({
+            mutation: banIp,
+            variables: {ip: '10.0.0.100', jail: 'login', durationSeconds: 60, reason: 'cypress audit test'}
+        });
+
+        cy.apollo({query: getAuditLog, variables: {limit: 10}})
+            .its('data.bruteForceLoginProtectionAuditLog')
+            .should((entries: Array<{event: string; ip: string}>) => {
+                const banned = entries.filter(e => e.event === 'BAN' && e.ip === '10.0.0.100');
+                expect(banned.length, 'at least one BAN audit entry for the IP').to.be.greaterThan(0);
+            });
+    });
+
+    it('clears the audit log', () => {
+        cy.apollo({mutation: clearAuditLog})
+            .its('data.bruteForceLoginProtectionClearAuditLog')
+            .should('eq', true);
+
+        cy.apollo({query: getAuditLog, variables: {limit: 10}})
+            .its('data.bruteForceLoginProtectionAuditLog')
+            .should((entries: unknown[]) => {
+                expect(entries).to.be.an('array').that.has.length(0);
+            });
+    });
+
+    it('returns cluster status with hazelcast running', () => {
+        cy.apollo({query: getClusterStatus})
+            .its('data.bruteForceLoginProtectionClusterStatus')
+            .should(status => {
+                expect(status.hazelcastRunning).to.eq(true);
+                expect(status.nodeCount).to.be.greaterThan(0);
+            });
+    });
+
+    it('blocks login from an IP after reaching the max failed attempts', () => {
+        cy.login();
+
+        cy.apollo({mutation: flush});
+
+        // Activate protection + tighten the "login" jail so the test runs quickly
+        cy.apollo({
+            mutation: saveGlobalSettings,
             variables: {
                 activated: true,
-                nbFailedLoginMax: 6,
-                whitelistIps: '127.0.0.1/32,::1/128'
+                whitelistIps: '',
+                recidiveFactor: 1.0,
+                maxBanTimeSeconds: 60
             }
         });
-        cy.reload();
-
-        cy.get('input[type="checkbox"]').first().uncheck({force: true});
-        cy.contains('button', 'Save').click();
-
-        cy.get('[class*="bflp_alert--success"]').should('be.visible');
-    });
-
-    it('shows an empty state message when no IPs are tracked', () => {
-        cy.login();
-        cy.visit(adminPath);
-
-        cy.apollo({mutation: flushCache});
-        cy.contains('button', 'Refresh').click();
-
-        cy.get('[class*="bflp_emptyState"]').should('be.visible');
-    });
-
-    it('blocks login from an IP after reaching the max failed attempts configured via UI', () => {
-        cy.login();
-        
-        // Start from a clean tracked-IPs state
-        cy.apollo({mutation: flushCache});
-        
-        const tti = 15;
         cy.apollo({
-            mutation: saveSettings,
+            mutation: saveJail,
             variables: {
-                activated: true,
-                nbFailedLoginMax: 2,
-                whitelistIps: '127.0.0.1/32,::1/128',
-                timeToIdle: tti
+                name: 'login',
+                enabled: true,
+                maxRetry: 2,
+                findTimeSeconds: 60,
+                banTimeSeconds: 15
             }
-        })
-        
-        // Drop the session so subsequent requests trigger real authentication
+        });
+
         cy.logout();
         cy.clearCookies();
-        
-        // Attempt 2 failed logins with incorrect credentials
+
         for (let i = 0; i < 2; i++) {
-            // Correct credentials must also fail — the IP is now blocked
             cy.request({
                 method: 'POST',
                 url: '/cms/login',
                 form: true,
-                body: {
-                    username: 'root',
-                    password: 'bad_password',
-                    redirect: '/'
-                },
+                body: {username: 'root', password: 'bad_password', redirect: '/'},
                 followRedirect: false,
                 failOnStatusCode: false
-            })
+            });
         }
-        
-        // Correct credentials must also fail — the IP is now blocked
+
+        // Even valid credentials must now fail — the IP is banned
         cy.request({
             method: 'POST',
             url: '/cms/login',
             form: true,
             body: {
                 username: 'root',
-                password: Cypress.env('SUPER_USER_PASSWORD') || 'root1234',
+                password: Cypress.env('SUPER_USER_PASSWORD') || 'root1234'
             },
             followRedirect: true,
             failOnStatusCode: false
         });
 
-        cy.intercept(adminPath).as('page')
-        cy.visit(adminPath, { failOnStatusCode: false })
-        cy.wait('@page').its('response.statusCode').should('equal', 401)
+        cy.intercept(adminPath).as('page');
+        cy.visit(adminPath, {failOnStatusCode: false});
+        cy.wait('@page').its('response.statusCode').should('equal', 401);
 
+        // Wait out the (short) ban window
+        cy.wait(20000);
 
-        cy.wait(15000);
-        
-        // Restore admin session so afterEach can run cy.apollo()
         cy.login();
-        cy.visit(adminPath, { failOnStatusCode: false })
-        cy.wait('@page').its('response.statusCode').should('equal', 200)
+        cy.visit(adminPath, {failOnStatusCode: false});
+        cy.wait('@page').its('response.statusCode').should('equal', 200);
+    });
+
+    /* ---------------- UI smoke tests (defensive, text-based selectors) ---------------- */
+
+    it('shows the admin panel with the main tabs', () => {
+        cy.login();
+        cy.visit(adminPath);
+
+        // Tabs labelled General / Jails / Bans / Audit log / Integrations
+        cy.contains(/General/i).should('be.visible');
+        cy.contains(/Jails/i).should('be.visible');
+        cy.contains(/Bans/i).should('be.visible');
+        cy.contains(/Audit log/i).should('be.visible');
+    });
+
+    it('shows the Save button in the General tab', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', /Save/i).should('be.visible');
+    });
+
+    it('shows the Flush all danger button', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', /Flush all/i).should('be.visible');
     });
 });

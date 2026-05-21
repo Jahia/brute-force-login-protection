@@ -1,0 +1,15 @@
+query getGlobalSettings {
+    bruteForceLoginProtectionGlobalSettings {
+        activated
+        whitelistIps
+        ignorePatterns
+        trustProxyHeader
+        emailEnabled
+        emailRecipient
+        webhookUrl
+        webhookSecretConfigured
+        auditLogMaxEntries
+        recidiveFactor
+        maxBanTimeSeconds
+    }
+}

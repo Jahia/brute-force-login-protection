@@ -4,20 +4,27 @@ import graphql.annotations.annotationTypes.GraphQLDescription;
 import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import graphql.annotations.annotationTypes.GraphQLTypeExtension;
-import org.jahia.api.Constants;
-import org.jahia.api.content.JCRTemplate;
-import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
-import org.jahia.modules.bruteforceloginprotection.cache.BruteForceLoginProtectionCacheManager;
-import org.jahia.modules.bruteforceloginprotection.cache.IpCacheEntry;
+import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
+import org.jahia.modules.bruteforceloginprotection.core.BannedIp;
+import org.jahia.modules.bruteforceloginprotection.core.BruteForceTracker;
+import org.jahia.modules.bruteforceloginprotection.core.FailureWindow;
+import org.jahia.modules.bruteforceloginprotection.core.JailConfig;
+import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlAuditEntry;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlBanActionInfo;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlBannedIp;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlClusterStatus;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlFailureWindow;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlGlobalSettings;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlJail;
+import org.jahia.modules.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
+import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
-import org.jahia.services.content.JCRNodeWrapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.jcr.RepositoryException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -26,159 +33,96 @@ import java.util.List;
 @GraphQLDescription("Brute Force Login Protection queries")
 public class BruteForceLoginProtectionQueryExtension {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceLoginProtectionQueryExtension.class);
-
     private BruteForceLoginProtectionQueryExtension() {
+        // utility
     }
 
     @GraphQLField
-    @GraphQLName("bruteForceLoginProtectionSettings")
-    @GraphQLDescription("Returns the current brute force login protection settings")
+    @GraphQLName("bruteForceLoginProtectionGlobalSettings")
     @GraphQLRequiresPermission("admin")
-    public static GqlSettings settings() {
-        try {
-            return BundleUtils.getOsgiService(JCRTemplate.class, null)
-                    .doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                        try {
-                            if (!session.nodeExists(BruteForceLoginProtectionMutationExtension.SETTINGS_NODE_PATH)) {
-                                return GqlSettings.defaults();
-                            }
-                            JCRNodeWrapper node = session.getNode(BruteForceLoginProtectionMutationExtension.SETTINGS_NODE_PATH);
-                            boolean activated = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED)
-                                    && node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_ACTIVATED).getBoolean();
-                            int nbFailedLoginMax = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX)
-                                    ? (int) node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_NB_FAILED_LOGIN_MAX).getLong()
-                                    : 6;
-                            String whitelistIps = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS)
-                                    ? node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_WHITELIST_IPS).getString()
-                                    : "127.0.0.1/32,::1/128";
-                            int timeToIdle = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE)
-                                    ? (int) node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TIME_TO_IDLE).getLong()
-                                    : BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE;
-                            boolean trustProxyHeader = node.hasProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER)
-                                    && node.getProperty(BruteForceLoginProtectionConstants.PROPERTY_TRUST_PROXY_HEADER).getBoolean();
-                            return new GqlSettings(activated, nbFailedLoginMax, whitelistIps, timeToIdle, trustProxyHeader);
-                        } catch (RepositoryException e) {
-                            LOGGER.error("Error reading brute force login protection settings", e);
-                            return GqlSettings.defaults();
-                        }
-                    });
-        } catch (RepositoryException e) {
-            LOGGER.error("Error reading brute force login protection settings", e);
-            return GqlSettings.defaults();
-        }
+    public static GqlGlobalSettings globalSettings() {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        if (svc == null) return null;
+        return new GqlGlobalSettings(svc.getGlobalSettings());
     }
 
     @GraphQLField
-    @GraphQLName("bruteForceLoginProtectionTrackedIps")
-    @GraphQLDescription("Returns the list of tracked IPs with their failed login counts")
+    @GraphQLName("bruteForceLoginProtectionJails")
     @GraphQLRequiresPermission("admin")
-    public static List<GqlTrackedIp> trackedIps() {
-        final BruteForceLoginProtectionCacheManager cacheManager = BundleUtils.getOsgiService(BruteForceLoginProtectionCacheManager.class, null);
-        if (cacheManager == null) {
-            return Collections.emptyList();
+    public static List<GqlJail> jails() {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        if (svc == null) return Collections.emptyList();
+        List<GqlJail> out = new ArrayList<>();
+        for (JailConfig jc : svc.getJails().values()) {
+            out.add(new GqlJail(jc));
         }
-        final GqlSettings currentSettings = settings();
-        final int threshold = currentSettings.getNbFailedLoginMax();
-        final List<IpCacheEntry> entries = cacheManager.getAllIpCacheEntries();
-        final List<GqlTrackedIp> result = new ArrayList<>(entries.size());
-        for (IpCacheEntry entry : entries) {
-            result.add(new GqlTrackedIp(entry.getKey(), entry.getNbFailedLogins(), entry.getNbFailedLogins() >= threshold));
-        }
-        return result;
+        return out;
     }
 
-    @GraphQLName("BruteForceLoginProtectionSettings")
-    @GraphQLDescription("Settings for the brute force login protection module")
-    public static class GqlSettings {
-
-        private final boolean activated;
-        private final int nbFailedLoginMax;
-        private final String whitelistIps;
-        private final int timeToIdle;
-        private final boolean trustProxyHeader;
-
-        public GqlSettings(boolean activated, int nbFailedLoginMax, String whitelistIps, int timeToIdle, boolean trustProxyHeader) {
-            this.activated = activated;
-            this.nbFailedLoginMax = nbFailedLoginMax;
-            this.whitelistIps = whitelistIps;
-            this.timeToIdle = timeToIdle;
-            this.trustProxyHeader = trustProxyHeader;
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionBannedIps")
+    @GraphQLRequiresPermission("admin")
+    public static List<GqlBannedIp> bannedIps() {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Collections.emptyList();
+        Collection<BannedIp> bans = tracker.listBans();
+        List<GqlBannedIp> out = new ArrayList<>(bans.size());
+        for (BannedIp b : bans) {
+            out.add(new GqlBannedIp(b));
         }
-
-        public static GqlSettings defaults() {
-            return new GqlSettings(false, 6, "127.0.0.1/32,::1/128", BruteForceLoginProtectionConstants.DEFAULT_TIME_TO_IDLE, false);
-        }
-
-        @GraphQLField
-        @GraphQLName("activated")
-        @GraphQLDescription("Whether the brute force login protection is active")
-        public boolean isActivated() {
-            return activated;
-        }
-
-        @GraphQLField
-        @GraphQLName("nbFailedLoginMax")
-        @GraphQLDescription("Maximum number of failed login attempts before an IP is blocked")
-        public int getNbFailedLoginMax() {
-            return nbFailedLoginMax;
-        }
-
-        @GraphQLField
-        @GraphQLName("whitelistIps")
-        @GraphQLDescription("Comma-separated list of CIDR blocks that are never blocked")
-        public String getWhitelistIps() {
-            return whitelistIps;
-        }
-
-        @GraphQLField
-        @GraphQLName("timeToIdle")
-        @GraphQLDescription("Seconds of inactivity before a tracked IP is forgotten from the cache")
-        public int getTimeToIdle() {
-            return timeToIdle;
-        }
-
-        @GraphQLField
-        @GraphQLName("trustProxyHeader")
-        @GraphQLDescription("Whether the X-Forwarded-For header is trusted as the client IP source")
-        public boolean isTrustProxyHeader() {
-            return trustProxyHeader;
-        }
+        return out;
     }
 
-    @GraphQLName("BruteForceLoginProtectionTrackedIp")
-    @GraphQLDescription("A tracked IP with its failed login count and blocked status")
-    public static class GqlTrackedIp {
-
-        private final String ip;
-        private final int nbFailedLogins;
-        private final boolean blocked;
-
-        public GqlTrackedIp(String ip, int nbFailedLogins, boolean blocked) {
-            this.ip = ip;
-            this.nbFailedLogins = nbFailedLogins;
-            this.blocked = blocked;
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionTrackedWindows")
+    @GraphQLRequiresPermission("admin")
+    public static List<GqlFailureWindow> trackedWindows() {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Collections.emptyList();
+        List<FailureWindow> windows = tracker.listWindows();
+        List<GqlFailureWindow> out = new ArrayList<>(windows.size());
+        for (FailureWindow w : windows) {
+            out.add(new GqlFailureWindow(w));
         }
-
-        @GraphQLField
-        @GraphQLName("ip")
-        @GraphQLDescription("The tracked IP address")
-        public String getIp() {
-            return ip;
-        }
-
-        @GraphQLField
-        @GraphQLName("nbFailedLogins")
-        @GraphQLDescription("Number of failed login attempts recorded for this IP")
-        public int getNbFailedLogins() {
-            return nbFailedLogins;
-        }
-
-        @GraphQLField
-        @GraphQLName("blocked")
-        @GraphQLDescription("Whether this IP currently exceeds the failed-login threshold")
-        public boolean isBlocked() {
-            return blocked;
-        }
+        return out;
     }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionAuditLog")
+    @GraphQLRequiresPermission("admin")
+    public static List<GqlAuditEntry> auditLog(
+            @GraphQLName("limit") Integer limit) {
+        AuditLogger audit = BundleUtils.getOsgiService(AuditLogger.class, null);
+        if (audit == null) return Collections.emptyList();
+        int l = (limit == null || limit <= 0) ? 100 : limit;
+        List<AuditLogger.AuditEntry> entries = audit.list(l);
+        List<GqlAuditEntry> out = new ArrayList<>(entries.size());
+        for (AuditLogger.AuditEntry e : entries) {
+            out.add(new GqlAuditEntry(e));
+        }
+        return out;
+    }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionBanActions")
+    @GraphQLRequiresPermission("admin")
+    public static List<GqlBanActionInfo> banActions() {
+        BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
+        if (tracker == null) return Collections.emptyList();
+        List<GqlBanActionInfo> out = new ArrayList<>();
+        for (BanAction a : tracker.getBanActions()) {
+            out.add(new GqlBanActionInfo(a.getName(), a.getClass().getName(), a.priority()));
+        }
+        return out;
+    }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionClusterStatus")
+    @GraphQLRequiresPermission("admin")
+    public static GqlClusterStatus clusterStatus() {
+        HazelcastInstanceManager hz = BundleUtils.getOsgiService(HazelcastInstanceManager.class, null);
+        if (hz == null) return new GqlClusterStatus(false, 0);
+        return new GqlClusterStatus(hz.isRunning(), hz.getClusterNodeCount());
+    }
+
 }

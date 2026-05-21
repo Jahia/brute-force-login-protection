@@ -2,8 +2,49 @@
 <jmix = 'http://www.jahia.org/jahia/mix/1.0'>
 
 [jnt:bruteForceLoginProtection] > jnt:content, jmix:autoPublish
- - whitelist_ips (string)
- - activated (boolean)
- - nb_failed_login_max (long) = 6
- - time_to_idle (long) = 3600
+ - activated (boolean) = false
+ - whitelist_ips (string) = '127.0.0.1/32,::1/128'
+ - ignore_patterns (string) multiple
  - trust_x_forwarded_for (boolean) = false
+ - email_enabled (boolean) = false
+ - email_recipient (string)
+ - webhook_url (string)
+ - webhook_secret (string)
+ - audit_log_max_entries (long) = 1000
+ - recidive_factor (double) = 2.0
+ - max_ban_time_seconds (long) = 604800
+ + jails (jnt:bruteForceLoginProtectionJails) = jnt:bruteForceLoginProtectionJails autocreated
+ + bans (jnt:bruteForceLoginProtectionBans) = jnt:bruteForceLoginProtectionBans autocreated
+ + auditLog (jnt:bruteForceLoginProtectionAuditLog) = jnt:bruteForceLoginProtectionAuditLog autocreated
+
+[jnt:bruteForceLoginProtectionJails] > jnt:contentFolder
+ + * (jnt:bruteForceLoginProtectionJail) = jnt:bruteForceLoginProtectionJail
+
+[jnt:bruteForceLoginProtectionJail] > jnt:content
+ - enabled (boolean) = true
+ - max_retry (long) = 6
+ - find_time_seconds (long) = 600
+ - ban_time_seconds (long) = 3600
+
+[jnt:bruteForceLoginProtectionBans] > jnt:contentFolder
+ + * (jnt:bruteForceLoginProtectionBan) = jnt:bruteForceLoginProtectionBan
+
+[jnt:bruteForceLoginProtectionBan] > jnt:content
+ - ip (string) mandatory
+ - jail (string) mandatory
+ - source (string)
+ - banned_at (long)
+ - banned_until (long)
+ - ban_count (long) = 1
+ - reason (string)
+
+[jnt:bruteForceLoginProtectionAuditLog] > jnt:contentFolder
+ + * (jnt:bruteForceLoginProtectionAuditEntry) = jnt:bruteForceLoginProtectionAuditEntry
+
+[jnt:bruteForceLoginProtectionAuditEntry] > jnt:content
+ - timestamp (long) mandatory
+ - event (string) mandatory
+ - ip (string)
+ - jail (string)
+ - source (string)
+ - details (string)

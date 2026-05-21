@@ -1,6 +1,17 @@
 # brute-force-login-protection
 
-Blocks login attempts from an IP address after a configurable number of consecutive failed logins. Supports both IPv4 and IPv6.
+Detects and blocks brute-force login attempts against a Jahia server, in the spirit of fail2ban. Supports IPv4 and IPv6.
+
+## Features
+
+- **Sliding-window detection** — count failed logins per IP within a configurable time window (`findTime`), not just consecutive failures.
+- **Per-jail configuration** — multiple jails, each with their own thresholds and ban durations.
+- **Persistent bans with recidive escalation** — bans survive restarts; repeat offenders get progressively longer bans, capped by a configurable maximum.
+- **Pluggable failure sources and ban actions** — `FailureSource` and `BanAction` SPIs let other modules contribute events or react to bans (block in-process, email, webhook, custom).
+- **Built-in actions**: in-process block, email notification (throttled), webhook POST signed with HMAC-SHA256 (`X-BFLP-Signature` header).
+- **Cluster-aware** — state is shared across Jahia nodes via an embedded Hazelcast instance.
+- **Audit log** — every ban, unban, and config change is recorded and visible from the UI.
+- **React admin UI** with tabs for General settings, Jails, Bans, Audit log, and Integrations.
 
 ## Installation
 
@@ -12,15 +23,14 @@ Blocks login attempts from an IP address after a configurable number of consecut
 
 Go to **Administration → Server settings → Configuration → Brute force login protection**.
 
-- **Service status** — toggle the protection on/off.
-- **Number of failed logins max** — threshold at which an IP is blocked (default: 6).
-- **CIDRs whitelist** — comma-separated list of IPv4 and/or IPv6 CIDR blocks that are never blocked. Defaults to `127.0.0.1/32,::1/128`. Examples: `192.168.0.0/24`, `2001:db8::/32`.
+- **General** — toggle the protection on/off, define the IP whitelist (CIDR), ignore patterns for usernames, trust of `X-Forwarded-For`, recidive factor, max ban time, audit log size.
+- **Jails** — create/edit/delete jails. Each jail has: `enabled`, `maxRetry`, `findTimeSeconds`, `banTimeSeconds`.
+- **Bans** — view currently banned IPs, manually ban an IP, or unban one.
+- **Audit** — browse recent events, clear the log.
+- **Integrations** — configure the email recipient and the webhook URL/secret.
 
-Configure the Jahia mail server settings to receive a notification email the first time each IP is blocked.
+Configure Jahia's mail server settings to receive notification emails.
 
-## Tracked IPs
+## Upgrading from 2.x
 
-The **Tracked IPs** section lists every IP with at least one failed login attempt, its failed-login count, and whether it currently exceeds the threshold (blocked) or is still below it (tracked).
-
-- **Unblock** — remove a specific IP from the cache. The counter resets to zero and the IP can log in again.
-- **Flush cache** — clear every tracked IP at once and force the settings to be re-read from the repository.
+**v3.0.0 is a breaking change.** Both the JCR settings schema and the GraphQL schema were rewritten — there is no automatic migration. After upgrading the bundle, settings must be re-entered from the admin UI. The old `nb_failed_login_max` / `time_to_idle` / `bruteForceLoginProtectionSettings` GraphQL endpoint no longer exists; use jails and `bruteForceLoginProtectionGlobalSettings` instead.
