@@ -69,7 +69,9 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
     protected Class<?> resolveClass(ObjectStreamClass desc) throws ClassNotFoundException, IOException {
         String name = desc.getName();
         if (!isAllowed(name)) {
-            LOGGER.warn("BFLP: refusing to deserialize disallowed class '{}'", name.replaceAll("[\r\n]", ""));
+            if (LOGGER.isWarnEnabled()) {
+                LOGGER.warn("BFLP: refusing to deserialize disallowed class '{}'", name.replaceAll("[\r\n]", ""));
+            }
             throw new InvalidClassException(name, "Class not allowed for deserialization");
         }
         try {
@@ -111,9 +113,6 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
             return true;
         }
         // Collections$* immutable wrapper inner classes
-        if (t.startsWith("java.util.Collections$") || t.startsWith("java.util.ImmutableCollections$")) {
-            return true;
-        }
-        return false;
+        return t.startsWith("java.util.Collections$") || t.startsWith("java.util.ImmutableCollections$");
     }
 }

@@ -166,8 +166,10 @@ public class BruteForceTracker implements FailureRecorder {
             }
         }
         if (banned == null) {
-            LOGGER.warn("BFLP: CAS exhaustion when updating ban for {} after {} retries; falling back to last-write-wins",
-                    AuditLogger.sanitize(ip), CAS_MAX_RETRIES);
+            if (LOGGER.isWarnEnabled()) {
+                LOGGER.warn("BFLP: CAS exhaustion when updating ban for {} after {} retries; falling back to last-write-wins",
+                        AuditLogger.sanitize(ip), CAS_MAX_RETRIES);
+            }
             BannedIp existing = bans.get(ip);
             int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
             banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
@@ -372,42 +374,62 @@ public class BruteForceTracker implements FailureRecorder {
             return false;
         }
         for (String p : patterns) {
-            if (StringUtils.isBlank(p)) continue;
-            final Pattern compiled;
-            try {
-                compiled = Pattern.compile(p);
-            } catch (PatternSyntaxException e) {
-                LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
-                continue;
-            }
-            Future<Boolean> future = IGNORE_PATTERN_EXECUTOR.submit(() -> compiled.matcher(username).matches());
-            try {
-                if (Boolean.TRUE.equals(future.get(IGNORE_PATTERN_MATCH_TIMEOUT_MS, TimeUnit.MILLISECONDS))) {
-                    return true;
-                }
-            } catch (TimeoutException te) {
-                future.cancel(true);
-                long now = System.currentTimeMillis();
-                long last = lastIgnorePatternTimeoutWarnMs.get();
-                if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
-                        && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)) {
-                    LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; treating as MATCHED to deny ReDoS bypass",
-                            AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
-                }
-                // Fail closed: treat a timeout as a match so the failure is silently skipped
-                // (denies an attacker who supplies a catastrophic username from bypassing
-                // counter increments via a slow-regex pattern).
+            IgnorePatternResult result = evaluateIgnorePattern(username, p);
+            if (result == IgnorePatternResult.MATCHED) {
                 return true;
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                future.cancel(true);
+            }
+            if (result == IgnorePatternResult.INTERRUPTED) {
                 return false;
-            } catch (Exception ex) {
-                LOGGER.debug("BFLP: ignore-pattern '{}' threw {}",
-                        AuditLogger.sanitize(p), ex.getClass().getSimpleName());
             }
         }
         return false;
+    }
+
+    private enum IgnorePatternResult { MATCHED, NOT_MATCHED, INTERRUPTED }
+
+    private static IgnorePatternResult evaluateIgnorePattern(String username, String p) {
+        if (StringUtils.isBlank(p)) {
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+        final Pattern compiled;
+        try {
+            compiled = Pattern.compile(p);
+        } catch (PatternSyntaxException e) {
+            LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+        Future<Boolean> future = IGNORE_PATTERN_EXECUTOR.submit(() -> compiled.matcher(username).matches());
+        try {
+            return Boolean.TRUE.equals(future.get(IGNORE_PATTERN_MATCH_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    ? IgnorePatternResult.MATCHED
+                    : IgnorePatternResult.NOT_MATCHED;
+        } catch (TimeoutException te) {
+            future.cancel(true);
+            warnIgnorePatternTimeout(p);
+            // Fail closed: treat a timeout as a match so the failure is silently skipped
+            // (denies an attacker who supplies a catastrophic username from bypassing
+            // counter increments via a slow-regex pattern).
+            return IgnorePatternResult.MATCHED;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            return IgnorePatternResult.INTERRUPTED;
+        } catch (Exception ex) {
+            LOGGER.debug("BFLP: ignore-pattern '{}' threw {}",
+                    AuditLogger.sanitize(p), ex.getClass().getSimpleName());
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+    }
+
+    private static void warnIgnorePatternTimeout(String p) {
+        long now = System.currentTimeMillis();
+        long last = lastIgnorePatternTimeoutWarnMs.get();
+        if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
+                && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)
+                && LOGGER.isWarnEnabled()) {
+            LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; treating as MATCHED to deny ReDoS bypass",
+                    AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
+        }
     }
 
     private int readBanCountFromJcr(String ip) {

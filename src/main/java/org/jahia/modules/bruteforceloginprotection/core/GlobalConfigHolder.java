@@ -163,18 +163,30 @@ public class GlobalConfigHolder implements ManagedService {
         if (v == null) {
             return Collections.emptyList();
         }
-        List<String> out = new ArrayList<>();
         if (v instanceof String[]) {
-            for (String s : (String[]) v) {
-                if (StringUtils.isNotBlank(s)) out.add(s.trim());
+            return collectNonBlank((String[]) v);
+        }
+        if (v instanceof Iterable<?>) {
+            return collectNonBlankIterable((Iterable<?>) v);
+        }
+        return collectNonBlank(String.valueOf(v).split(","));
+    }
+
+    private static List<String> collectNonBlank(String[] values) {
+        List<String> out = new ArrayList<>();
+        for (String s : values) {
+            if (StringUtils.isNotBlank(s)) {
+                out.add(s.trim());
             }
-        } else if (v instanceof Iterable<?>) {
-            for (Object o : (Iterable<?>) v) {
-                if (o != null && StringUtils.isNotBlank(o.toString())) out.add(o.toString().trim());
-            }
-        } else {
-            for (String s : String.valueOf(v).split(",")) {
-                if (StringUtils.isNotBlank(s)) out.add(s.trim());
+        }
+        return out;
+    }
+
+    private static List<String> collectNonBlankIterable(Iterable<?> values) {
+        List<String> out = new ArrayList<>();
+        for (Object o : values) {
+            if (o != null && StringUtils.isNotBlank(o.toString())) {
+                out.add(o.toString().trim());
             }
         }
         return out;

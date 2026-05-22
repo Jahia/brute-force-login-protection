@@ -231,6 +231,15 @@ public class HazelcastInstanceManager implements Runnable {
             return;
         }
         Path secretFile = etcDir.resolve(CLUSTER_SECRET_FILE);
+        Properties props = loadSecretProps(secretFile);
+        String password = props.getProperty(CLUSTER_PASSWORD_PROPERTY);
+        if (StringUtils.isBlank(password)) {
+            password = generateAndPersistSecret(secretFile, props);
+        }
+        System.setProperty(CLUSTER_PASSWORD_PROPERTY, password);
+    }
+
+    private static Properties loadSecretProps(Path secretFile) {
         Properties props = new Properties();
         if (Files.exists(secretFile)) {
             try (InputStream is = Files.newInputStream(secretFile)) {
@@ -239,37 +248,42 @@ public class HazelcastInstanceManager implements Runnable {
                 logger.warn("BFLP: cannot read cluster secret file {}: {}", secretFile, e.getMessage());
             }
         }
-        String password = props.getProperty(CLUSTER_PASSWORD_PROPERTY);
-        if (StringUtils.isBlank(password)) {
-            byte[] random = new byte[32];
-            new SecureRandom().nextBytes(random);
-            password = Base64.getEncoder().encodeToString(random);
-            props.setProperty(CLUSTER_PASSWORD_PROPERTY, password);
-            try {
-                if (!Files.exists(secretFile)) {
-                    Files.createFile(secretFile);
-                }
-                try (java.io.OutputStream os = Files.newOutputStream(secretFile)) {
-                    props.store(os, "BFLP cluster shared secret (auto-generated; do not edit)");
-                }
-                try {
-                    Files.setPosixFilePermissions(secretFile,
-                            PosixFilePermissions.fromString("rw-------"));
-                } catch (UnsupportedOperationException permEx) {
-                    // Non-POSIX FS (typically Windows) — fall back to ACL granting only the owner.
-                    if (!tryRestrictWithAcl(secretFile)) {
-                        logger.warn("BFLP: could not lock down cluster secret file {} via POSIX or ACL; please restrict it manually",
-                                secretFile);
-                    }
-                } catch (IOException permEx) {
-                    logger.warn("BFLP: cannot apply POSIX permissions on {}: {}", secretFile, permEx.getMessage());
-                }
-                logger.info("BFLP: generated per-install Hazelcast cluster secret at {}", secretFile);
-            } catch (IOException e) {
-                logger.warn("BFLP: cannot persist cluster secret file {}: {}", secretFile, e.getMessage());
+        return props;
+    }
+
+    private static String generateAndPersistSecret(Path secretFile, Properties props) {
+        byte[] random = new byte[32];
+        new SecureRandom().nextBytes(random);
+        String password = Base64.getEncoder().encodeToString(random);
+        props.setProperty(CLUSTER_PASSWORD_PROPERTY, password);
+        try {
+            if (!Files.exists(secretFile)) {
+                Files.createFile(secretFile);
             }
+            try (java.io.OutputStream os = Files.newOutputStream(secretFile)) {
+                props.store(os, "BFLP cluster shared secret (auto-generated; do not edit)");
+            }
+            restrictSecretFilePermissions(secretFile);
+            logger.info("BFLP: generated per-install Hazelcast cluster secret at {}", secretFile);
+        } catch (IOException e) {
+            logger.warn("BFLP: cannot persist cluster secret file {}: {}", secretFile, e.getMessage());
         }
-        System.setProperty(CLUSTER_PASSWORD_PROPERTY, password);
+        return password;
+    }
+
+    private static void restrictSecretFilePermissions(Path secretFile) {
+        try {
+            Files.setPosixFilePermissions(secretFile,
+                    PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException permEx) {
+            // Non-POSIX FS (typically Windows) — fall back to ACL granting only the owner.
+            if (!tryRestrictWithAcl(secretFile)) {
+                logger.warn("BFLP: could not lock down cluster secret file {} via POSIX or ACL; please restrict it manually",
+                        secretFile);
+            }
+        } catch (IOException permEx) {
+            logger.warn("BFLP: cannot apply POSIX permissions on {}: {}", secretFile, permEx.getMessage());
+        }
     }
 
     /**

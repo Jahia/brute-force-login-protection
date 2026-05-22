@@ -40,35 +40,40 @@ public final class RegexSafetyCheck {
     private static void assertNoNestedQuantifiers(String pattern) {
         // crude lint: a group close followed by *,+,? then another quantifier is a smell.
         for (int i = 0; i < pattern.length() - 1; i++) {
-            char c = pattern.charAt(i);
-            if (c != ')' && c != '}') {
-                continue;
-            }
-            char next = pattern.charAt(i + 1);
-            if (next != '*' && next != '+' && next != '?' && next != '{') {
-                continue;
-            }
-            if (i + 2 < pattern.length()) {
-                char after = pattern.charAt(i + 2);
-                if (after == '*' || after == '+' || after == '?') {
-                    throw new IllegalArgumentException(
-                            "Pattern contains nested quantifier at index " + i);
-                }
+            if (isNestedQuantifierAt(pattern, i)) {
+                throw new IllegalArgumentException(
+                        "Pattern contains nested quantifier at index " + i);
             }
         }
+    }
+
+    private static boolean isNestedQuantifierAt(String pattern, int i) {
+        char c = pattern.charAt(i);
+        if (c != ')' && c != '}') {
+            return false;
+        }
+        char next = pattern.charAt(i + 1);
+        if (next != '*' && next != '+' && next != '?' && next != '{') {
+            return false;
+        }
+        if (i + 2 >= pattern.length()) {
+            return false;
+        }
+        char after = pattern.charAt(i + 2);
+        return after == '*' || after == '+' || after == '?';
     }
 
     private static void assertGroupQuantifierDensity(String pattern) {
         int depth = 0;
         int[] quantsAtDepth = new int[64];
+        boolean escaped = false;
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
-            if (c == '\\' && i + 1 < pattern.length()) {
-                // skip escaped char
-                i++;
-                continue;
-            }
-            if (c == '(' && depth + 1 < quantsAtDepth.length) {
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\' && i + 1 < pattern.length()) {
+                escaped = true;
+            } else if (c == '(' && depth + 1 < quantsAtDepth.length) {
                 depth++;
                 quantsAtDepth[depth] = 0;
             } else if (c == ')' && depth > 0) {

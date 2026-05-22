@@ -83,33 +83,40 @@ public final class WebhookUrlValidator {
         }
         byte[] bytes = addr.getAddress();
         if (addr instanceof Inet6Address && bytes.length == 16) {
-            // IPv6 Unique Local Address (fc00::/7) — first byte 0xfc or 0xfd.
-            int first = bytes[0] & 0xFF;
-            if ((first & 0xFE) == 0xFC) {
-                return true;
-            }
-            // IPv6 link-local fe80::/10
-            if ((first & 0xFF) == 0xFE && (bytes[1] & 0xC0) == 0x80) {
-                return true;
-            }
-            // IPv4-mapped IPv6 (::ffff:x.x.x.x): first 10 bytes zero, bytes[10]=bytes[11]=0xff
-            boolean mappedPrefix = true;
-            for (int i = 0; i < 10; i++) {
-                if (bytes[i] != 0) { mappedPrefix = false; break; }
-            }
-            if (mappedPrefix && (bytes[10] & 0xFF) == 0xFF && (bytes[11] & 0xFF) == 0xFF) {
-                try {
-                    byte[] v4 = new byte[]{bytes[12], bytes[13], bytes[14], bytes[15]};
-                    InetAddress mapped = Inet4Address.getByAddress(v4);
-                    if (isForbidden(mapped)) {
-                        return true;
-                    }
-                } catch (UnknownHostException e) {
-                    // 4-byte address never throws; defensive only
-                    return true;
-                }
-            }
+            return isForbiddenIpv6(bytes);
         }
         return false;
+    }
+
+    private static boolean isForbiddenIpv6(byte[] bytes) {
+        int first = bytes[0] & 0xFF;
+        // IPv6 Unique Local Address (fc00::/7) — first byte 0xfc or 0xfd.
+        if ((first & 0xFE) == 0xFC) {
+            return true;
+        }
+        // IPv6 link-local fe80::/10
+        if ((first & 0xFF) == 0xFE && (bytes[1] & 0xC0) == 0x80) {
+            return true;
+        }
+        return isForbiddenMappedV4(bytes);
+    }
+
+    private static boolean isForbiddenMappedV4(byte[] bytes) {
+        // IPv4-mapped IPv6 (::ffff:x.x.x.x): first 10 bytes zero, bytes[10]=bytes[11]=0xff
+        for (int i = 0; i < 10; i++) {
+            if (bytes[i] != 0) {
+                return false;
+            }
+        }
+        if ((bytes[10] & 0xFF) != 0xFF || (bytes[11] & 0xFF) != 0xFF) {
+            return false;
+        }
+        try {
+            byte[] v4 = new byte[]{bytes[12], bytes[13], bytes[14], bytes[15]};
+            return isForbidden(InetAddress.getByAddress(v4));
+        } catch (UnknownHostException e) {
+            // 4-byte address never throws; defensive only
+            return true;
+        }
     }
 }

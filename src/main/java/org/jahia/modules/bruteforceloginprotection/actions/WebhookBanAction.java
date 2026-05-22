@@ -75,33 +75,7 @@ public class WebhookBanAction implements BanAction {
         String secret = settings.getWebhookSecret();
         final HttpURLConnection[] connHolder = new HttpURLConnection[1];
         Future<Void> future = WEBHOOK_EXECUTOR.submit(() -> {
-            try {
-                URL u = new URL(url);
-                HttpURLConnection conn = (HttpURLConnection) u.openConnection();
-                connHolder[0] = conn;
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                if (StringUtils.isNotBlank(secret)) {
-                    String sig = hmacSha256Hex(body, secret);
-                    if (sig != null) {
-                        conn.setRequestProperty("X-BFLP-Signature", "sha256=" + sig);
-                    }
-                }
-                conn.setDoOutput(true);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(body.getBytes(StandardCharsets.UTF_8));
-                }
-                int code = conn.getResponseCode();
-                if (code >= 400) {
-                    LOGGER.warn("BFLP: webhook returned status {}", code);
-                }
-                conn.disconnect();
-            } catch (Exception e) {
-                LOGGER.warn("BFLP: webhook delivery failed: {}", e.getMessage());
-            }
+            deliver(url, body, secret, connHolder);
             return null;
         });
         try {
@@ -118,6 +92,41 @@ public class WebhookBanAction implements BanAction {
             future.cancel(true);
         } catch (Exception ex) {
             LOGGER.debug("BFLP: webhook task failed: {}", ex.getMessage());
+        }
+    }
+
+    private static void deliver(String url, String body, String secret, HttpURLConnection[] connHolder) {
+        try {
+            URL u = new URL(url);
+            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            connHolder[0] = conn;
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            applySignature(conn, body, secret);
+            conn.setDoOutput(true);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            if (code >= 400) {
+                LOGGER.warn("BFLP: webhook returned status {}", code);
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            LOGGER.warn("BFLP: webhook delivery failed: {}", e.getMessage());
+        }
+    }
+
+    private static void applySignature(HttpURLConnection conn, String body, String secret) {
+        if (StringUtils.isBlank(secret)) {
+            return;
+        }
+        String sig = hmacSha256Hex(body, secret);
+        if (sig != null) {
+            conn.setRequestProperty("X-BFLP-Signature", "sha256=" + sig);
         }
     }
 
