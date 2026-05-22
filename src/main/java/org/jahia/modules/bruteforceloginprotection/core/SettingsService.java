@@ -308,6 +308,15 @@ public class SettingsService {
         if (!node.hasNode(AUDIT_NODE_NAME)) {
             node.addNode(AUDIT_NODE_NAME, NT_AUDIT_CONTAINER);
             dirty = true;
+        } else {
+            // Upgrade path: containers created before jmix:autoSplitFolders was added to the CND
+            // don't carry the mixin retroactively. Add it on the fly so auto-splitting takes
+            // effect on the next addNode without forcing operators to drop /settings/...
+            JCRNodeWrapper auditNode = node.getNode(AUDIT_NODE_NAME);
+            if (!auditNode.isNodeType("jmix:autoSplitFolders")) {
+                auditNode.addMixin("jmix:autoSplitFolders");
+                dirty = true;
+            }
         }
         if (dirty) {
             session.save();
