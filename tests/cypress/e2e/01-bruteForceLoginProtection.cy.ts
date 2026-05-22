@@ -323,6 +323,10 @@ describe('Brute Force Login Protection', () => {
         }).its('status').should('equal', 401);
 
         // Audit log captured the BAN, and at least one failure carries source=basic-auth-valve
+
+        cy.logout();
+        cy.clearCookies();
+        cy.wait(20000);
         cy.login();
         cy.apollo({query: getAuditLog, variables: {limit: 50}})
             .its('data.bruteForceLoginProtectionAuditLog')
