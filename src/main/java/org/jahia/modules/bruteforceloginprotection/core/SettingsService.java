@@ -2,6 +2,7 @@ package org.jahia.modules.bruteforceloginprotection.core;
 
 import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
+import org.jahia.modules.bruteforceloginprotection.actions.WebhookUrlValidator;
 import org.jahia.services.content.JCRCallback;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
@@ -94,6 +95,7 @@ public class SettingsService {
                         String whitelist = stringProp(node, PROP_WHITELIST_IPS, DEFAULT_WHITELIST);
                         List<String> ignore = stringArrayProp(node, PROP_IGNORE_PATTERNS);
                         boolean trustProxy = boolProp(node, PROP_TRUST_PROXY_HEADER, false);
+                        List<String> trustedProxyCidrs = stringArrayProp(node, PROP_TRUSTED_PROXY_CIDRS);
                         boolean emailEnabled = boolProp(node, PROP_EMAIL_ENABLED, false);
                         String emailRecipient = stringProp(node, PROP_EMAIL_RECIPIENT, null);
                         String webhookUrl = stringProp(node, PROP_WEBHOOK_URL, null);
@@ -106,6 +108,7 @@ public class SettingsService {
                                 .whitelistIps(whitelist)
                                 .ignorePatterns(ignore)
                                 .trustProxyHeader(trustProxy)
+                                .trustedProxyCidrs(trustedProxyCidrs)
                                 .emailEnabled(emailEnabled)
                                 .emailRecipient(emailRecipient)
                                 .webhookUrl(webhookUrl)
@@ -187,6 +190,11 @@ public class SettingsService {
             node.setProperty(PROP_WHITELIST_IPS, u.getWhitelistIps());
         }
         if (u.getIgnorePatterns() != null) {
+            for (String p : u.getIgnorePatterns()) {
+                if (StringUtils.isNotBlank(p)) {
+                    RegexSafetyCheck.assertSafe(p);
+                }
+            }
             node.setProperty(PROP_IGNORE_PATTERNS, u.getIgnorePatterns().toArray(new String[0]));
         }
         if (u.getTrustProxyHeader() != null) {
@@ -199,7 +207,13 @@ public class SettingsService {
             node.setProperty(PROP_EMAIL_RECIPIENT, u.getEmailRecipient());
         }
         if (u.getWebhookUrl() != null) {
+            if (!u.getWebhookUrl().isEmpty()) {
+                WebhookUrlValidator.validateUrl(u.getWebhookUrl());
+            }
             node.setProperty(PROP_WEBHOOK_URL, u.getWebhookUrl());
+        }
+        if (u.getTrustedProxyCidrs() != null) {
+            node.setProperty(PROP_TRUSTED_PROXY_CIDRS, u.getTrustedProxyCidrs().toArray(new String[0]));
         }
     }
 
@@ -216,9 +230,17 @@ public class SettingsService {
         }
     }
 
+    private static final int AUDIT_LOG_MIN = 100;
+    private static final int AUDIT_LOG_MAX = 100_000;
+
     private static void applyNumericProps(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
         if (u.getAuditLogMaxEntries() != null && u.getAuditLogMaxEntries() > 0) {
-            node.setProperty(PROP_AUDIT_LOG_MAX, u.getAuditLogMaxEntries().longValue());
+            int clamped = Math.max(AUDIT_LOG_MIN, Math.min(AUDIT_LOG_MAX, u.getAuditLogMaxEntries()));
+            if (clamped != u.getAuditLogMaxEntries()) {
+                LOGGER.info("BFLP: auditLogMaxEntries clamped from {} to {} (range [{}, {}])",
+                        u.getAuditLogMaxEntries(), clamped, AUDIT_LOG_MIN, AUDIT_LOG_MAX);
+            }
+            node.setProperty(PROP_AUDIT_LOG_MAX, (long) clamped);
         }
         if (u.getRecidiveFactor() != null && u.getRecidiveFactor() >= 1.0) {
             node.setProperty(PROP_RECIDIVE_FACTOR, u.getRecidiveFactor());

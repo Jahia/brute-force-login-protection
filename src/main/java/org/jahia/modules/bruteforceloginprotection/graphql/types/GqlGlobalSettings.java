@@ -29,6 +29,9 @@ public class GqlGlobalSettings {
     @GraphQLField @GraphQLName("trustProxyHeader")
     public boolean isTrustProxyHeader() { return inner.isTrustProxyHeader(); }
 
+    @GraphQLField @GraphQLName("trustedProxyCidrs")
+    public List<String> getTrustedProxyCidrs() { return inner.getTrustedProxyCidrs(); }
+
     @GraphQLField @GraphQLName("emailEnabled")
     public boolean isEmailEnabled() { return inner.isEmailEnabled(); }
 

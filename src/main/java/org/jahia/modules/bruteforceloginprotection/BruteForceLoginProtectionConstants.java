@@ -29,6 +29,7 @@ public final class BruteForceLoginProtectionConstants {
     public static final String PROP_WHITELIST_IPS = "whitelist_ips";
     public static final String PROP_IGNORE_PATTERNS = "ignore_patterns";
     public static final String PROP_TRUST_PROXY_HEADER = "trust_x_forwarded_for";
+    public static final String PROP_TRUSTED_PROXY_CIDRS = "trusted_proxy_cidrs";
     public static final String PROP_EMAIL_ENABLED = "email_enabled";
     public static final String PROP_EMAIL_RECIPIENT = "email_recipient";
     public static final String PROP_WEBHOOK_URL = "webhook_url";

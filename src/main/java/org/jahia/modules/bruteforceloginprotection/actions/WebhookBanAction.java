@@ -51,6 +51,12 @@ public class WebhookBanAction implements BanAction {
         if (StringUtils.isBlank(url)) {
             return;
         }
+        try {
+            WebhookUrlValidator.validateUrl(url);
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn("BFLP: webhook URL rejected by SSRF guard: {}", ex.getMessage());
+            return;
+        }
         String body = buildJson(context, event);
         try {
             URL u = new URL(url);

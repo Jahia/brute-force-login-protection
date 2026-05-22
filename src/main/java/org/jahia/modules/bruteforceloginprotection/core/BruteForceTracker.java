@@ -28,7 +28,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -39,6 +44,15 @@ public class BruteForceTracker implements FailureRecorder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceTracker.class);
     private static final String SOURCE_MANUAL = "manual";
+    private static final long IGNORE_PATTERN_MATCH_TIMEOUT_MS = 50L;
+    private static final long IGNORE_PATTERN_WARN_THROTTLE_MS = 60_000L;
+    private static final ExecutorService IGNORE_PATTERN_EXECUTOR =
+            Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "bflp-regex-matcher");
+                t.setDaemon(true);
+                return t;
+            });
+    private static final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -333,12 +347,34 @@ public class BruteForceTracker implements FailureRecorder {
         }
         for (String p : patterns) {
             if (StringUtils.isBlank(p)) continue;
+            final Pattern compiled;
             try {
-                if (Pattern.compile(p).matcher(username).matches()) {
-                    return true;
-                }
+                compiled = Pattern.compile(p);
             } catch (PatternSyntaxException e) {
                 LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
+                continue;
+            }
+            Future<Boolean> future = IGNORE_PATTERN_EXECUTOR.submit(() -> compiled.matcher(username).matches());
+            try {
+                if (Boolean.TRUE.equals(future.get(IGNORE_PATTERN_MATCH_TIMEOUT_MS, TimeUnit.MILLISECONDS))) {
+                    return true;
+                }
+            } catch (TimeoutException te) {
+                future.cancel(true);
+                long now = System.currentTimeMillis();
+                long last = lastIgnorePatternTimeoutWarnMs.get();
+                if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
+                        && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)) {
+                    LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; skipping",
+                            AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                future.cancel(true);
+                return false;
+            } catch (Exception ex) {
+                LOGGER.debug("BFLP: ignore-pattern '{}' threw {}",
+                        AuditLogger.sanitize(p), ex.getClass().getSimpleName());
             }
         }
         return false;

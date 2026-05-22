@@ -1,14 +1,61 @@
 package org.jahia.modules.bruteforceloginprotection.hazelcast;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectStreamClass;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Proxy;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
+/**
+ * Hardened {@link ObjectInputStream} used by the Hazelcast serializer.
+ *
+ * <p>In addition to using the module's classloader for class resolution, this stream restricts
+ * the classes that can be deserialized to a tight allowlist to mitigate Java-deserialization
+ * gadget attacks. Anything outside the allowlist is rejected with {@link InvalidClassException}.
+ * Proxy classes are rejected outright.</p>
+ */
 public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClassLoaderAwareObjectInputStream.class);
+
+    private static final String MODULE_PACKAGE_PREFIX = "org.jahia.modules.bruteforceloginprotection.";
+
+    private static final Set<String> JDK_ALLOWLIST;
+    static {
+        Set<String> s = new HashSet<>();
+        // Strings, primitive wrappers
+        s.add("java.lang.String");
+        s.add("java.lang.Number");
+        s.add("java.lang.Long");
+        s.add("java.lang.Integer");
+        s.add("java.lang.Double");
+        s.add("java.lang.Float");
+        s.add("java.lang.Short");
+        s.add("java.lang.Byte");
+        s.add("java.lang.Boolean");
+        s.add("java.lang.Character");
+        s.add("java.lang.Enum");
+        // Collections
+        s.add("java.util.ArrayList");
+        s.add("java.util.LinkedList");
+        s.add("java.util.HashMap");
+        s.add("java.util.LinkedHashMap");
+        s.add("java.util.HashSet");
+        s.add("java.util.LinkedHashSet");
+        s.add("java.util.TreeMap");
+        s.add("java.util.TreeSet");
+        // Time/identity
+        s.add("java.util.Date");
+        s.add("java.time.Instant");
+        s.add("java.util.UUID");
+        JDK_ALLOWLIST = Collections.unmodifiableSet(s);
+    }
 
     private final ClassLoader classLoader;
 
@@ -18,8 +65,12 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
     }
 
     @Override
-    protected Class<?> resolveClass(ObjectStreamClass desc) throws ClassNotFoundException {
+    protected Class<?> resolveClass(ObjectStreamClass desc) throws ClassNotFoundException, IOException {
         String name = desc.getName();
+        if (!isAllowed(name)) {
+            LOGGER.warn("BFLP: refusing to deserialize disallowed class '{}'", name.replaceAll("[\r\n]", ""));
+            throw new InvalidClassException(name, "Class not allowed for deserialization");
+        }
         try {
             return ClassLoaderUtil.loadClass(classLoader, name);
         } catch (ClassNotFoundException ex) {
@@ -27,31 +78,41 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
         }
     }
 
+    /**
+     * Reject all dynamic proxy classes — deserializing arbitrary proxy interface tuples is a
+     * well-known gadget pivot, and the module's own value types are never proxies.
+     */
     @Override
-    protected Class<?> resolveProxyClass(String[] interfaces) throws ClassNotFoundException {
-        ClassLoader nonPublicLoader = null;
-        Class<?>[] classObjs = new Class<?>[interfaces.length];
-        for (int i = 0; i < interfaces.length; i++) {
-            Class<?> cl = ClassLoaderUtil.loadClass(classLoader, interfaces[i]);
-            if ((cl.getModifiers() & Modifier.PUBLIC) == 0) {
-                if (nonPublicLoader != null) {
-                    if (nonPublicLoader != cl.getClassLoader()) {
-                        throw new IllegalAccessError("conflicting non-public interface class loaders, for Class: " + cl.getName());
-                    }
-                } else {
-                    nonPublicLoader = cl.getClassLoader();
-                }
-            }
-            classObjs[i] = cl;
+    protected Class<?> resolveProxyClass(String[] interfaces) throws IOException {
+        LOGGER.warn("BFLP: refusing to deserialize proxy class (interfaces={})", interfaces == null ? 0 : interfaces.length);
+        throw new InvalidClassException("Proxy classes are not allowed for deserialization");
+    }
+
+    private static boolean isAllowed(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
         }
-        try {
-            // Proxy.getProxyClass is deprecated but required here for serialization-compatible
-            // proxy class resolution (ObjectInputStream.resolveProxyClass contract).
-            @SuppressWarnings({"java:S1874", "deprecation"})
-            Class<?> proxyClass = Proxy.getProxyClass(nonPublicLoader != null ? nonPublicLoader : classLoader, classObjs);
-            return proxyClass;
-        } catch (IllegalArgumentException e) {
-            throw new ClassNotFoundException("Error resolving proxy class for interfaces: " + Arrays.toString(interfaces), e);
+        // Arrays — peel the leading '[' / 'L' wrapper(s) until we reach an actual type name.
+        String t = name;
+        while (t.startsWith("[")) {
+            t = t.substring(1);
         }
+        if (t.startsWith("L") && t.endsWith(";")) {
+            t = t.substring(1, t.length() - 1);
+        } else if (t.length() == 1) {
+            // primitive array element type code (Z, B, C, D, F, I, J, S) — always safe
+            return "ZBCDFIJS".indexOf(t.charAt(0)) >= 0;
+        }
+        if (t.startsWith(MODULE_PACKAGE_PREFIX)) {
+            return true;
+        }
+        if (JDK_ALLOWLIST.contains(t)) {
+            return true;
+        }
+        // Collections$* immutable wrapper inner classes
+        if (t.startsWith("java.util.Collections$") || t.startsWith("java.util.ImmutableCollections$")) {
+            return true;
+        }
+        return false;
     }
 }

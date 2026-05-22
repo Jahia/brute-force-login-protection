@@ -2,6 +2,8 @@ package org.jahia.modules.bruteforceloginprotection.sources;
 
 import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
+import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
+import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureEvent;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureRecorder;
@@ -21,7 +23,9 @@ import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component(service = {}, immediate = true)
 public final class AuthValveFailureSource extends BaseAuthValve implements FailureSource {
@@ -31,6 +35,8 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
+
+    private final AtomicBoolean emptyTrustedProxyWarningEmitted = new AtomicBoolean(false);
 
     @Reference(target = "(type=authentication)")
     private Pipeline authPipeline;
@@ -124,17 +130,55 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     }
 
     private String retrieveRemoteAddress(HttpServletRequest request) {
-        if (settingsService != null && settingsService.getGlobalSettings().isTrustProxyHeader()) {
-            String headerValue = request.getHeader(REMOTE_ADDRESS_HEADER);
-            if (StringUtils.isNotBlank(headerValue)) {
-                String[] parts = headerValue.split(KEY_SEPARATOR);
-                String first = parts[0].trim();
-                if (!first.isEmpty()) {
-                    return first;
-                }
+        String remoteAddr = request.getRemoteAddr();
+        if (settingsService == null) {
+            return remoteAddr;
+        }
+        GlobalSettings settings = settingsService.getGlobalSettings();
+        if (!settings.isTrustProxyHeader()) {
+            return remoteAddr;
+        }
+        List<String> trustedCidrs = settings.getTrustedProxyCidrs();
+        if (trustedCidrs == null || trustedCidrs.isEmpty()) {
+            if (emptyTrustedProxyWarningEmitted.compareAndSet(false, true)) {
+                LOGGER.warn("BFLP: trustProxyHeader=true but no trustedProxyCidrs configured;"
+                        + " ignoring X-Forwarded-For and falling back to socket address. Configure"
+                        + " trustedProxyCidrs to enable header-based remote-address resolution.");
+            }
+            return remoteAddr;
+        }
+        if (!remoteAddrMatchesTrustedProxy(remoteAddr, trustedCidrs)) {
+            return remoteAddr;
+        }
+        String headerValue = request.getHeader(REMOTE_ADDRESS_HEADER);
+        if (StringUtils.isNotBlank(headerValue)) {
+            String[] parts = headerValue.split(KEY_SEPARATOR);
+            String first = parts[0].trim();
+            if (!first.isEmpty()) {
+                return first;
             }
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
+    }
+
+    private static boolean remoteAddrMatchesTrustedProxy(String remoteAddr, List<String> cidrs) {
+        if (remoteAddr == null) {
+            return false;
+        }
+        for (String cidr : cidrs) {
+            String trimmed = StringUtils.trimToNull(cidr);
+            if (trimmed == null) {
+                continue;
+            }
+            try {
+                if (new CidrMatcher(trimmed).matches(remoteAddr)) {
+                    return true;
+                }
+            } catch (IllegalArgumentException ignored) {
+                // skip invalid CIDR
+            }
+        }
+        return false;
     }
 
     private static String sanitize(String value) {

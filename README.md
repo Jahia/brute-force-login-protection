@@ -28,6 +28,25 @@ Enable cluster mode in one of these ways before deploying:
 
 A single-node "cluster of one" is fine for dev/test — the Hazelcast instance simply won't have peers.
 
+### Cluster security (optional but recommended in production)
+
+The dedicated Hazelcast instance ships with two opt-in hardening options:
+
+- **Per-install group password.** On first start the module generates a random 32-byte secret and
+  stores it in `<jahia-var>/karaf/etc/bflp-cluster-secret.properties` (POSIX permissions `rw-------`
+  where supported). The password is exposed via the system property `bflp.cluster.password`. To use
+  your own password, set `-Dbflp.cluster.password=...` before starting Jahia and the secret file is
+  ignored.
+- **TLS for cluster traffic.** Set the following system properties to enable mutual-TLS over the
+  Hazelcast members. **Without them, cluster traffic is sent in plaintext.**
+
+  | Property | Purpose |
+  |----------|---------|
+  | `bflp.cluster.keystore` | Path to the keystore (`.jks` / `.p12`). Required to enable TLS. |
+  | `bflp.cluster.keystorePassword` | Keystore password. |
+  | `bflp.cluster.truststore` | Path to the truststore. |
+  | `bflp.cluster.truststorePassword` | Truststore password. |
+
 ## Installation
 
 - In Jahia, go to **Administration → Server settings → System components → Modules**
@@ -43,6 +62,26 @@ Go to **Administration → Server settings → Configuration → Brute force log
 - **Bans** — view currently banned IPs, manually ban an IP, or unban one.
 - **Audit** — browse recent events, clear the log.
 - **Integrations** — configure the email recipient and the webhook URL/secret.
+
+### Webhook receiver guidance
+
+When verifying the `X-BFLP-Signature` header on the receiver side, **always use a constant-time
+comparison** to prevent timing attacks on the HMAC. Concretely:
+
+- Java: `java.security.MessageDigest.isEqual(expectedBytes, providedBytes)`
+- Python: `hmac.compare_digest(expected, provided)`
+- Node.js: `crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))`
+
+The webhook URL is validated server-side to prevent SSRF: only `https://` is accepted by default,
+private/loopback/link-local/multicast targets and the AWS metadata IP are rejected. Set
+`-Dbflp.webhook.allowHttp=true` to allow plain `http://` for trusted on-premise receivers.
+
+### Trusted reverse proxies (X-Forwarded-For)
+
+`trustProxyHeader` alone is no longer sufficient to honour `X-Forwarded-For`: in addition, the
+remote socket address of the incoming request must match one of the CIDR entries configured in
+`trustedProxyCidrs`. If the list is empty while the flag is on, the module logs a one-time warning
+and falls back to the raw socket address.
 
 Configure Jahia's mail server settings to receive notification emails.
 

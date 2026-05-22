@@ -58,9 +58,9 @@ public class EmailBanAction implements BanAction {
             return;
         }
         try {
-            String recipient = StringUtils.defaultIfBlank(settings.getEmailRecipient(), mailService.defaultRecipient());
+            String recipient = stripHeaderInjection(StringUtils.defaultIfBlank(settings.getEmailRecipient(), mailService.defaultRecipient()));
             String sender = mailService.defaultSender();
-            String subject = String.format("[BFLP] Login blocked for IP %s", sanitize(context.getIp()));
+            String subject = stripHeaderInjection(String.format("[BFLP] Login blocked for IP %s", sanitize(context.getIp())));
             String body = "The IP " + sanitize(context.getIp()) + " was banned by jail '" + sanitize(context.getJailName())
                     + "' (banCount=" + context.getBanCount()
                     + ", until=" + context.getBannedUntil() + ").\n"
@@ -89,5 +89,18 @@ public class EmailBanAction implements BanAction {
 
     private static String sanitize(String s) {
         return s == null ? null : s.replaceAll("[\r\n]", "");
+    }
+
+    /**
+     * Strips CR/LF and their percent-encoded equivalents to prevent SMTP header injection
+     * when an attacker controls the configured recipient (e.g., via a compromised admin UI).
+     */
+    static String stripHeaderInjection(String value) {
+        if (value == null) {
+            return null;
+        }
+        return StringUtils.replaceEach(value,
+                new String[]{"\r", "\n", "%0a", "%0A", "%0d", "%0D"},
+                new String[]{"", "", "", "", "", ""});
     }
 }

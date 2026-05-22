@@ -4,7 +4,7 @@
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <group>
         <name>brute-force-login-protection-bflp</name>
-        <password>BFLP-PvqXn3wd9KrTzM2sAhYpEjL7uF</password>
+        <password>${bflp.cluster.password}</password>
     </group>
     <management-center enabled="false">http://localhost:8080/mancenter</management-center>
     <properties>

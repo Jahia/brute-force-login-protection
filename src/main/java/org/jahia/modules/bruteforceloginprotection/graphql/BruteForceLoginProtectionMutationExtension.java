@@ -33,6 +33,7 @@ public class BruteForceLoginProtectionMutationExtension {
             @GraphQLName("whitelistIps") String whitelistIps,
             @GraphQLName("ignorePatterns") List<String> ignorePatterns,
             @GraphQLName("trustProxyHeader") Boolean trustProxyHeader,
+            @GraphQLName("trustedProxyCidrs") List<String> trustedProxyCidrs,
             @GraphQLName("emailEnabled") Boolean emailEnabled,
             @GraphQLName("emailRecipient") String emailRecipient,
             @GraphQLName("webhookUrl") String webhookUrl,
@@ -47,6 +48,7 @@ public class BruteForceLoginProtectionMutationExtension {
                 .whitelistIps(whitelistIps)
                 .ignorePatterns(ignorePatterns)
                 .trustProxyHeader(trustProxyHeader)
+                .trustedProxyCidrs(trustedProxyCidrs)
                 .emailEnabled(emailEnabled)
                 .emailRecipient(emailRecipient)
                 .webhookUrl(webhookUrl)
