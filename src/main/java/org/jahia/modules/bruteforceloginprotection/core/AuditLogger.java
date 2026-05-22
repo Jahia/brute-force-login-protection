@@ -189,7 +189,7 @@ public class AuditLogger {
         if (nodes.size() <= max) {
             return;
         }
-        long toRemove = nodes.size() - max;
+        long toRemove = (long) nodes.size() - max;
         nodes.sort((a, b) -> {
             try {
                 long ta = a.hasProperty(PROP_AUDIT_TIMESTAMP) ? a.getProperty(PROP_AUDIT_TIMESTAMP).getLong() : 0L;
