@@ -3,7 +3,7 @@ import {useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
 import styles from '../BruteForceLoginProtection.scss';
-import {GET_BAN_ACTIONS, GET_GLOBAL_SETTINGS, SAVE_GLOBAL_SETTINGS} from '../BruteForceLoginProtection.gql';
+import {GET_BAN_ACTIONS, GET_GLOBAL_SETTINGS, SAVE_GLOBAL_SETTINGS, TEST_EMAIL, TEST_WEBHOOK} from '../BruteForceLoginProtection.gql';
 import {StatusAlerts} from './StatusAlerts';
 import {useTransientStatus} from './useTransientStatus';
 
@@ -39,6 +39,31 @@ export const IntegrationsTab = () => {
     const [saveSettings, {loading: saving}] = useMutation(SAVE_GLOBAL_SETTINGS, {
         refetchQueries: ['GetGlobalSettings']
     });
+
+    const [emailTestResult, setEmailTestResult] = useState(null);
+    const [webhookTestResult, setWebhookTestResult] = useState(null);
+    const [testEmail, {loading: testingEmail}] = useMutation(TEST_EMAIL);
+    const [testWebhook, {loading: testingWebhook}] = useMutation(TEST_WEBHOOK);
+
+    const handleTestEmail = async () => {
+        setEmailTestResult(null);
+        try {
+            const r = await testEmail();
+            setEmailTestResult(r.data?.bruteForceLoginProtectionTestEmail || {success: false, message: 'No response'});
+        } catch (err) {
+            setEmailTestResult({success: false, message: err.message || 'Request failed'});
+        }
+    };
+
+    const handleTestWebhook = async () => {
+        setWebhookTestResult(null);
+        try {
+            const r = await testWebhook();
+            setWebhookTestResult(r.data?.bruteForceLoginProtectionTestWebhook || {success: false, message: 'No response'});
+        } catch (err) {
+            setWebhookTestResult({success: false, message: err.message || 'Request failed'});
+        }
+    };
 
     const handleSubmit = async e => {
         e.preventDefault();
@@ -126,6 +151,26 @@ export const IntegrationsTab = () => {
                     />
                     <p id="bflp-int-email-hint" className={styles.bflp_hint}>{t('integrations.emailRecipientHint')}</p>
                 </div>
+                <div className={styles.bflp_inlineActions}>
+                    <button
+                        type="button"
+                        className={styles.bflp_unbanBtn}
+                        disabled={testingEmail}
+                        onClick={handleTestEmail}
+                    >
+                        {testingEmail ? t('integrations.testEmailSending') : t('integrations.testEmail')}
+                    </button>
+                    <p className={styles.bflp_hint}>{t('integrations.testEmailHint')}</p>
+                </div>
+                {emailTestResult && (
+                    <div
+                        className={`${styles.bflp_alert} ${emailTestResult.success ? styles['bflp_alert--success'] : styles['bflp_alert--error']}`}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {emailTestResult.message}
+                    </div>
+                )}
             </div>
 
             <div className={styles.bflp_subSection}>
@@ -174,6 +219,26 @@ export const IntegrationsTab = () => {
                         </div>
                     )}
                 </div>
+                <div className={styles.bflp_inlineActions}>
+                    <button
+                        type="button"
+                        className={styles.bflp_unbanBtn}
+                        disabled={testingWebhook}
+                        onClick={handleTestWebhook}
+                    >
+                        {testingWebhook ? t('integrations.testWebhookSending') : t('integrations.testWebhook')}
+                    </button>
+                    <p className={styles.bflp_hint}>{t('integrations.testWebhookHint')}</p>
+                </div>
+                {webhookTestResult && (
+                    <div
+                        className={`${styles.bflp_alert} ${webhookTestResult.success ? styles['bflp_alert--success'] : styles['bflp_alert--error']}`}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {webhookTestResult.message}
+                    </div>
+                )}
             </div>
 
             <div className={styles.bflp_actions}>

@@ -5,10 +5,14 @@ import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import graphql.annotations.annotationTypes.GraphQLNonNull;
 import graphql.annotations.annotationTypes.GraphQLTypeExtension;
+import org.jahia.modules.bruteforceloginprotection.actions.EmailBanAction;
+import org.jahia.modules.bruteforceloginprotection.actions.WebhookBanAction;
 import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.BruteForceTracker;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettingsUpdate;
+import org.jahia.modules.bruteforceloginprotection.core.IntegrationTestResult;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlTestResult;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
@@ -122,5 +126,29 @@ public class BruteForceLoginProtectionMutationExtension {
         AuditLogger audit = BundleUtils.getOsgiService(AuditLogger.class, null);
         if (audit == null) return Boolean.FALSE;
         return audit.clear();
+    }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionTestEmail")
+    @GraphQLDescription("Sends a synchronous test notification using the currently persisted email settings, bypassing the per-IP throttle.")
+    @GraphQLRequiresPermission("admin")
+    public static GqlTestResult testEmail() {
+        EmailBanAction action = BundleUtils.getOsgiService(EmailBanAction.class, null);
+        if (action == null) {
+            return new GqlTestResult(IntegrationTestResult.fail("Email ban action is not registered"));
+        }
+        return new GqlTestResult(action.sendTest());
+    }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionTestWebhook")
+    @GraphQLDescription("POSTs a synchronous test payload to the currently persisted webhook URL, applying the same SSRF guard and HMAC signing as the production path.")
+    @GraphQLRequiresPermission("admin")
+    public static GqlTestResult testWebhook() {
+        WebhookBanAction action = BundleUtils.getOsgiService(WebhookBanAction.class, null);
+        if (action == null) {
+            return new GqlTestResult(IntegrationTestResult.fail("Webhook ban action is not registered"));
+        }
+        return new GqlTestResult(action.sendTest());
     }
 }

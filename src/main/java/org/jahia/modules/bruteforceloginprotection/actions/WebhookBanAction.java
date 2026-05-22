@@ -3,6 +3,7 @@ package org.jahia.modules.bruteforceloginprotection.actions;
 import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.core.BanContext;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
+import org.jahia.modules.bruteforceloginprotection.core.IntegrationTestResult;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
 import org.osgi.service.component.annotations.Component;
@@ -23,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@Component(immediate = true, service = BanAction.class)
+@Component(immediate = true, service = {BanAction.class, WebhookBanAction.class})
 public class WebhookBanAction implements BanAction {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WebhookBanAction.class);
@@ -92,6 +93,53 @@ public class WebhookBanAction implements BanAction {
             future.cancel(true);
         } catch (Exception ex) {
             LOGGER.debug("BFLP: webhook task failed: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * Sends a synchronous test payload to the configured webhook URL using the currently
+     * persisted settings, applying the same SSRF guard + HMAC signing as the production path.
+     * Intended for the admin UI "Send test webhook" button.
+     */
+    public IntegrationTestResult sendTest() {
+        GlobalSettings settings = settingsService.getGlobalSettings();
+        String url = settings.getWebhookUrl();
+        if (StringUtils.isBlank(url)) {
+            return IntegrationTestResult.fail("No webhook URL configured");
+        }
+        try {
+            WebhookUrlValidator.validateUrl(url);
+        } catch (IllegalArgumentException ex) {
+            return IntegrationTestResult.fail("URL rejected: " + ex.getMessage());
+        }
+        String body = "{\"event\":\"test\",\"message\":\"BFLP test webhook\",\"timestamp\":"
+                + System.currentTimeMillis() + "}";
+        String secret = settings.getWebhookSecret();
+        HttpURLConnection conn = null;
+        try {
+            URL u = new URL(url);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            applySignature(conn, body, secret);
+            conn.setDoOutput(true);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            String summary = "HTTP " + code;
+            return code < 400
+                    ? IntegrationTestResult.ok("Webhook accepted (" + summary + ")")
+                    : IntegrationTestResult.fail("Webhook rejected (" + summary + ")");
+        } catch (Exception e) {
+            return IntegrationTestResult.fail("Delivery failed: " + e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 

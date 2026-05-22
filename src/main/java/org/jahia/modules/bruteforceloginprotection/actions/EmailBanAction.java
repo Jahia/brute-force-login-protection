@@ -6,6 +6,7 @@ import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.modules.bruteforceloginprotection.core.BanContext;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
+import org.jahia.modules.bruteforceloginprotection.core.IntegrationTestResult;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
@@ -17,7 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.TimeUnit;
 
-@Component(immediate = true, service = BanAction.class)
+@Component(immediate = true, service = {BanAction.class, EmailBanAction.class})
 public class EmailBanAction implements BanAction {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EmailBanAction.class);
@@ -74,6 +75,42 @@ public class EmailBanAction implements BanAction {
     @Override
     public void onUnban(BanContext context) {
         // no email on unban
+    }
+
+    /**
+     * Sends a synchronous test email using the currently persisted settings, bypassing the
+     * per-IP throttle. Intended for the admin UI "Send test email" button.
+     */
+    public IntegrationTestResult sendTest() {
+        GlobalSettings settings = settingsService.getGlobalSettings();
+        MailService mailService;
+        try {
+            mailService = MailService.getInstance();
+        } catch (Exception t) {
+            return IntegrationTestResult.fail("MailService unavailable: " + t.getMessage());
+        }
+        if (mailService == null) {
+            return IntegrationTestResult.fail("MailService is not registered");
+        }
+        if (!mailService.isEnabled()) {
+            return IntegrationTestResult.fail("Jahia mail service is disabled (configure SMTP in server settings)");
+        }
+        String recipient = stripHeaderInjection(StringUtils.defaultIfBlank(
+                settings.getEmailRecipient(), mailService.defaultRecipient()));
+        if (StringUtils.isBlank(recipient)) {
+            return IntegrationTestResult.fail("No recipient configured (set one above or in Jahia mail settings)");
+        }
+        try {
+            String sender = stripHeaderInjection(mailService.defaultSender());
+            String subject = stripHeaderInjection("[BFLP] Test notification");
+            String body = "This is a test notification from Brute Force Login Protection. "
+                    + "If you received it, the email integration is working.";
+            mailService.sendMessage(sender, recipient, null, null, subject, body);
+            return IntegrationTestResult.ok("Test email sent to " + recipient);
+        } catch (Exception e) {
+            LOGGER.warn("BFLP: test email failed: {}", e.getMessage());
+            return IntegrationTestResult.fail("Send failed: " + e.getMessage());
+        }
     }
 
     private boolean throttle(String ip) {

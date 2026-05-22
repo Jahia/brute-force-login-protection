@@ -153,6 +153,24 @@ export const GET_BAN_ACTIONS = gql`
     }
 `;
 
+export const TEST_EMAIL = gql`
+    mutation TestEmailIntegration {
+        bruteForceLoginProtectionTestEmail {
+            success
+            message
+        }
+    }
+`;
+
+export const TEST_WEBHOOK = gql`
+    mutation TestWebhookIntegration {
+        bruteForceLoginProtectionTestWebhook {
+            success
+            message
+        }
+    }
+`;
+
 export const GET_CLUSTER_STATUS = gql`
     query GetClusterStatus {
         bruteForceLoginProtectionClusterStatus {
