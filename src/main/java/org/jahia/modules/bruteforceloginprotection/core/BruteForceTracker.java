@@ -38,6 +38,7 @@ import static org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtect
 public class BruteForceTracker implements FailureRecorder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BruteForceTracker.class);
+    private static final String SOURCE_MANUAL = "manual";
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -73,7 +74,7 @@ public class BruteForceTracker implements FailureRecorder {
     }
 
     @Override
-    public void record(FailureEvent event) {
+    public void recordEvent(FailureEvent event) {
         if (event == null || event.getIp() == null) {
             return;
         }
@@ -141,14 +142,34 @@ public class BruteForceTracker implements FailureRecorder {
         auditLogger.log(AuditLogger.EVENT_BAN, event.getIp(), jail.getName(), event.getSourceName(),
                 "banCount=" + banned.getBanCount() + " durationSec=" + banSec);
 
-        BanContext ctx = new BanContext(banned.getIp(), banned.getJailName(), banned.getSourceName(),
-                banned.getBannedAt(), banned.getBannedUntil(), banned.getBanCount(), banned.getReason(),
-                Collections.emptyMap());
+        BanContext ctx = BanContext.builder()
+                .ip(banned.getIp())
+                .jailName(banned.getJailName())
+                .sourceName(banned.getSourceName())
+                .bannedAt(banned.getBannedAt())
+                .bannedUntil(banned.getBannedUntil())
+                .banCount(banned.getBanCount())
+                .reason(banned.getReason())
+                .build();
+        dispatchOnBan(ctx);
+    }
+
+    private void dispatchOnBan(BanContext ctx) {
         for (BanAction action : getBanActions()) {
             try {
                 action.onBan(ctx);
             } catch (Exception e) {
                 LOGGER.warn("BFLP: BanAction {} failed onBan: {}", action.getName(), e.getMessage());
+            }
+        }
+    }
+
+    private void dispatchOnUnban(BanContext ctx) {
+        for (BanAction action : getBanActions()) {
+            try {
+                action.onUnban(ctx);
+            } catch (Exception e) {
+                LOGGER.warn("BFLP: BanAction {} failed onUnban: {}", action.getName(), e.getMessage());
             }
         }
     }
@@ -172,21 +193,22 @@ public class BruteForceTracker implements FailureRecorder {
         IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
         BannedIp existing = bans.get(ip);
         int prevCount = existing != null ? existing.getBanCount() : readBanCountFromJcr(ip);
-        BannedIp banned = new BannedIp(ip, jail.getName(), "manual", now, now + banSec * 1000L,
+        BannedIp banned = new BannedIp(ip, jail.getName(), SOURCE_MANUAL, now, now + banSec * 1000L,
                 prevCount + 1, StringUtils.defaultIfBlank(reason, "manual ban"));
         bans.put(ip, banned, banSec, TimeUnit.SECONDS);
         mirrorBanToJcr(banned);
-        auditLogger.log(AuditLogger.EVENT_BAN, ip, jail.getName(), "manual",
+        auditLogger.log(AuditLogger.EVENT_BAN, ip, jail.getName(), SOURCE_MANUAL,
                 "manual ban for " + banSec + "s");
-        BanContext ctx = new BanContext(ip, jail.getName(), "manual", now, banned.getBannedUntil(),
-                banned.getBanCount(), banned.getReason(), Collections.emptyMap());
-        for (BanAction action : getBanActions()) {
-            try {
-                action.onBan(ctx);
-            } catch (Exception e) {
-                LOGGER.warn("BFLP: BanAction {} failed onBan: {}", action.getName(), e.getMessage());
-            }
-        }
+        BanContext ctx = BanContext.builder()
+                .ip(ip)
+                .jailName(jail.getName())
+                .sourceName(SOURCE_MANUAL)
+                .bannedAt(now)
+                .bannedUntil(banned.getBannedUntil())
+                .banCount(banned.getBanCount())
+                .reason(banned.getReason())
+                .build();
+        dispatchOnBan(ctx);
         return true;
     }
 
@@ -202,18 +224,18 @@ public class BruteForceTracker implements FailureRecorder {
         }
         removeBanFromJcr(ip);
         auditLogger.log(AuditLogger.EVENT_UNBAN, ip, removed != null ? removed.getJailName() : null,
-                "manual", "manual unban");
+                SOURCE_MANUAL, "manual unban");
         if (removed != null) {
-            BanContext ctx = new BanContext(removed.getIp(), removed.getJailName(), removed.getSourceName(),
-                    removed.getBannedAt(), removed.getBannedUntil(), removed.getBanCount(), removed.getReason(),
-                    Collections.emptyMap());
-            for (BanAction action : getBanActions()) {
-                try {
-                    action.onUnban(ctx);
-                } catch (Exception e) {
-                    LOGGER.warn("BFLP: BanAction {} failed onUnban: {}", action.getName(), e.getMessage());
-                }
-            }
+            BanContext ctx = BanContext.builder()
+                    .ip(removed.getIp())
+                    .jailName(removed.getJailName())
+                    .sourceName(removed.getSourceName())
+                    .bannedAt(removed.getBannedAt())
+                    .bannedUntil(removed.getBannedUntil())
+                    .banCount(removed.getBanCount())
+                    .reason(removed.getReason())
+                    .build();
+            dispatchOnUnban(ctx);
         }
         return true;
     }
@@ -326,7 +348,7 @@ public class BruteForceTracker implements FailureRecorder {
         try {
             return jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
                 String name = ipToNodeName(ip);
-                String path = BANS_NODE_PATH + "/" + name;
+                String path = String.join("/", BANS_NODE_PATH, name);
                 if (!session.nodeExists(path)) {
                     return 0;
                 }
@@ -350,7 +372,7 @@ public class BruteForceTracker implements FailureRecorder {
                 if (banned.getSourceName() != null) node.setProperty(PROP_BAN_SOURCE, banned.getSourceName());
                 node.setProperty(PROP_BAN_AT, banned.getBannedAt());
                 node.setProperty(PROP_BAN_UNTIL, banned.getBannedUntil());
-                node.setProperty(PROP_BAN_COUNT, (long) banned.getBanCount());
+                node.setProperty(PROP_BAN_COUNT, banned.getBanCount());
                 if (banned.getReason() != null) node.setProperty(PROP_BAN_REASON, banned.getReason());
                 session.save();
                 return null;
@@ -364,7 +386,7 @@ public class BruteForceTracker implements FailureRecorder {
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
                 String name = ipToNodeName(ip);
-                String path = BANS_NODE_PATH + "/" + name;
+                String path = String.join("/", BANS_NODE_PATH, name);
                 if (session.nodeExists(path)) {
                     session.getNode(path).remove();
                     session.save();

@@ -27,15 +27,19 @@ public class InProcessBlockAction implements BanAction {
 
     @Override
     public void onBan(BanContext context) {
-        LOGGER.info("BFLP: IP {} banned (jail={}, banCount={}, until={})",
-                sanitize(context.getIp()), sanitize(context.getJailName()),
-                context.getBanCount(), context.getBannedUntil());
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("BFLP: IP {} banned (jail={}, banCount={}, until={})",
+                    sanitize(context.getIp()), sanitize(context.getJailName()),
+                    context.getBanCount(), context.getBannedUntil());
+        }
     }
 
     @Override
     public void onUnban(BanContext context) {
-        LOGGER.info("BFLP: IP {} unbanned (jail={})",
-                sanitize(context.getIp()), sanitize(context.getJailName()));
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("BFLP: IP {} unbanned (jail={})",
+                    sanitize(context.getIp()), sanitize(context.getJailName()));
+        }
     }
 
     private static String sanitize(String s) {

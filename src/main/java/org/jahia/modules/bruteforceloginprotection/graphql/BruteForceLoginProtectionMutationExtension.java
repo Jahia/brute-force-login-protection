@@ -7,6 +7,7 @@ import graphql.annotations.annotationTypes.GraphQLNonNull;
 import graphql.annotations.annotationTypes.GraphQLTypeExtension;
 import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.BruteForceTracker;
+import org.jahia.modules.bruteforceloginprotection.core.GlobalSettingsUpdate;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.graphql.provider.dxm.DXGraphQLProvider;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
@@ -26,6 +27,7 @@ public class BruteForceLoginProtectionMutationExtension {
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionSaveGlobalSettings")
     @GraphQLRequiresPermission("admin")
+    @SuppressWarnings("java:S107") // GraphQL schema arity: argument names are part of the public schema
     public static Boolean saveGlobalSettings(
             @GraphQLName("activated") Boolean activated,
             @GraphQLName("whitelistIps") String whitelistIps,
@@ -40,9 +42,20 @@ public class BruteForceLoginProtectionMutationExtension {
             @GraphQLName("maxBanTimeSeconds") Integer maxBanTimeSeconds) {
         SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
         if (svc == null) return Boolean.FALSE;
-        return svc.saveGlobalSettings(activated, whitelistIps, ignorePatterns, trustProxyHeader,
-                emailEnabled, emailRecipient, webhookUrl, webhookSecret, auditLogMaxEntries,
-                recidiveFactor, maxBanTimeSeconds);
+        GlobalSettingsUpdate update = GlobalSettingsUpdate.builder()
+                .activated(activated)
+                .whitelistIps(whitelistIps)
+                .ignorePatterns(ignorePatterns)
+                .trustProxyHeader(trustProxyHeader)
+                .emailEnabled(emailEnabled)
+                .emailRecipient(emailRecipient)
+                .webhookUrl(webhookUrl)
+                .webhookSecret(webhookSecret)
+                .auditLogMaxEntries(auditLogMaxEntries)
+                .recidiveFactor(recidiveFactor)
+                .maxBanTimeSeconds(maxBanTimeSeconds)
+                .build();
+        return svc.saveGlobalSettings(update);
     }
 
     @GraphQLField

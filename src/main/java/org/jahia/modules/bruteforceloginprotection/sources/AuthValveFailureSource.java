@@ -85,7 +85,9 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         String remoteAddress = retrieveRemoteAddress(request);
 
         if (remoteAddress != null && failureRecorder != null && failureRecorder.isIpCurrentlyBanned(remoteAddress)) {
-            LOGGER.info("BFLP: Blocked auth attempt from banned IP {}", sanitize(remoteAddress));
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("BFLP: Blocked auth attempt from banned IP {}", sanitize(remoteAddress));
+            }
             request.setAttribute(LoginEngineAuthValveImpl.VALVE_RESULT, LoginEngineAuthValveImpl.BAD_PASSWORD);
             return;
         }
@@ -103,10 +105,18 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             String username = request.getParameter("username");
             String userAgent = request.getHeader("User-Agent");
             String requestPath = request.getRequestURI();
-            FailureEvent event = new FailureEvent(remoteAddress, getName(), getName(),
-                    System.currentTimeMillis(), username, userAgent, requestPath, extras);
+            FailureEvent event = FailureEvent.builder()
+                    .ip(remoteAddress)
+                    .sourceName(getName())
+                    .jailName(getName())
+                    .timestampMs(System.currentTimeMillis())
+                    .username(username)
+                    .userAgent(userAgent)
+                    .requestPath(requestPath)
+                    .extras(extras)
+                    .build();
             try {
-                failureRecorder.record(event);
+                failureRecorder.recordEvent(event);
             } catch (Exception e) {
                 LOGGER.warn("BFLP: failure recorder threw: {}", e.getMessage());
             }

@@ -93,13 +93,25 @@ public class BruteForceTrackerTest {
     }
 
     private GlobalSettings activeSettings() {
-        return new GlobalSettings(true, "127.0.0.1/32,::1/128", Collections.emptyList(),
-                false, false, null, null, null, 1000, 2.0, 86400L);
+        return GlobalSettings.builder()
+                .activated(true)
+                .whitelistIps("127.0.0.1/32,::1/128")
+                .ignorePatterns(Collections.emptyList())
+                .auditLogMaxEntries(1000)
+                .recidiveFactor(2.0)
+                .maxBanTimeSec(86400L)
+                .build();
     }
 
     private GlobalSettings inactiveSettings() {
-        return new GlobalSettings(false, "", Collections.emptyList(),
-                false, false, null, null, null, 1000, 2.0, 86400L);
+        return GlobalSettings.builder()
+                .activated(false)
+                .whitelistIps("")
+                .ignorePatterns(Collections.emptyList())
+                .auditLogMaxEntries(1000)
+                .recidiveFactor(2.0)
+                .maxBanTimeSec(86400L)
+                .build();
     }
 
     private JailConfig loginJail(int maxRetry, long findTimeSec, long banTimeSec) {
@@ -107,14 +119,22 @@ public class BruteForceTrackerTest {
     }
 
     private FailureEvent failureFor(String ip) {
-        return new FailureEvent(ip, "test-source", "login", System.currentTimeMillis(),
-                "alice", "agent", "/cms/login", new HashMap<>());
+        return FailureEvent.builder()
+                .ip(ip)
+                .sourceName("test-source")
+                .jailName("login")
+                .timestampMs(System.currentTimeMillis())
+                .username("alice")
+                .userAgent("agent")
+                .requestPath("/cms/login")
+                .extras(new HashMap<>())
+                .build();
     }
 
     @Test
     public void deactivatedSettingsSkipRecord() {
         when(settingsService.getGlobalSettings()).thenReturn(inactiveSettings());
-        tracker.record(failureFor("10.0.0.1"));
+        tracker.recordEvent(failureFor("10.0.0.1"));
         verify(auditLogger, never()).log(anyString(), anyString(), anyString(), anyString(), anyString());
         assertThat(windowsStore).isEmpty();
         assertThat(bansStore).isEmpty();
@@ -124,7 +144,7 @@ public class BruteForceTrackerTest {
     public void whitelistedIpNotTracked() {
         when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
         when(settingsService.getJail("login")).thenReturn(loginJail(3, 60L, 60L));
-        tracker.record(failureFor("127.0.0.1"));
+        tracker.recordEvent(failureFor("127.0.0.1"));
         verify(auditLogger, never()).log(anyString(), anyString(), anyString(), anyString(), anyString());
         assertThat(windowsStore).isEmpty();
         assertThat(bansStore).isEmpty();
@@ -133,9 +153,12 @@ public class BruteForceTrackerTest {
     @Test
     public void nullIpEventIgnored() {
         when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
-        FailureEvent ev = new FailureEvent(null, "src", "login", 0L, "u", "a", "/p", null);
-        tracker.record(ev);
-        tracker.record(null);
+        FailureEvent ev = FailureEvent.builder()
+                .sourceName("src").jailName("login").timestampMs(0L)
+                .username("u").userAgent("a").requestPath("/p")
+                .build();
+        tracker.recordEvent(ev);
+        tracker.recordEvent(null);
         verify(auditLogger, never()).log(anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
@@ -144,7 +167,7 @@ public class BruteForceTrackerTest {
         when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
         when(settingsService.getJail("login")).thenReturn(loginJail(3, 60L, 60L));
 
-        tracker.record(failureFor("10.0.0.5"));
+        tracker.recordEvent(failureFor("10.0.0.5"));
 
         assertThat(windowsStore).hasSize(1);
         FailureWindow w = windowsStore.get("10.0.0.5|login");
@@ -167,8 +190,8 @@ public class BruteForceTrackerTest {
         when(action.getName()).thenReturn("test-action");
         tracker.addBanAction(action);
 
-        tracker.record(failureFor("10.0.0.6"));
-        tracker.record(failureFor("10.0.0.6"));
+        tracker.recordEvent(failureFor("10.0.0.6"));
+        tracker.recordEvent(failureFor("10.0.0.6"));
 
         assertThat(bansStore).containsKey("10.0.0.6");
         BannedIp banned = bansStore.get("10.0.0.6");
@@ -218,13 +241,13 @@ public class BruteForceTrackerTest {
         when(settingsService.getJail("login")).thenReturn(loginJail(1, 60L, 60L));
 
         // First ban
-        tracker.record(failureFor("10.0.0.10"));
+        tracker.recordEvent(failureFor("10.0.0.10"));
         BannedIp first = bansStore.get("10.0.0.10");
         assertThat(first).isNotNull();
         assertThat(first.getBanCount()).isEqualTo(1);
 
         // Second event for same IP - existing ban present in map, banCount += 1
-        tracker.record(failureFor("10.0.0.10"));
+        tracker.recordEvent(failureFor("10.0.0.10"));
         BannedIp second = bansStore.get("10.0.0.10");
         assertThat(second.getBanCount()).isEqualTo(2);
     }

@@ -2,7 +2,6 @@ package org.jahia.modules.bruteforceloginprotection.core;
 
 import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
-import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.services.content.JCRCallback;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
@@ -102,8 +101,19 @@ public class SettingsService {
                         int auditMax = (int) longProp(node, PROP_AUDIT_LOG_MAX, DEFAULT_AUDIT_LOG_MAX);
                         double recidive = doubleProp(node, PROP_RECIDIVE_FACTOR, DEFAULT_RECIDIVE_FACTOR);
                         long maxBan = longProp(node, PROP_MAX_BAN_TIME_SEC, DEFAULT_MAX_BAN_TIME_SEC);
-                        return new GlobalSettings(activated, whitelist, ignore, trustProxy, emailEnabled,
-                                emailRecipient, webhookUrl, webhookSecret, auditMax, recidive, maxBan);
+                        return GlobalSettings.builder()
+                                .activated(activated)
+                                .whitelistIps(whitelist)
+                                .ignorePatterns(ignore)
+                                .trustProxyHeader(trustProxy)
+                                .emailEnabled(emailEnabled)
+                                .emailRecipient(emailRecipient)
+                                .webhookUrl(webhookUrl)
+                                .webhookSecret(webhookSecret)
+                                .auditLogMaxEntries(auditMax)
+                                .recidiveFactor(recidive)
+                                .maxBanTimeSec(maxBan)
+                                .build();
                     });
         } catch (RepositoryException e) {
             LOGGER.error("BFLP: error reading global settings, returning defaults", e);
@@ -147,52 +157,11 @@ public class SettingsService {
         }
     }
 
-    public boolean saveGlobalSettings(Boolean activated, String whitelistIps, List<String> ignorePatterns,
-                                       Boolean trustProxyHeader, Boolean emailEnabled, String emailRecipient,
-                                       String webhookUrl, String webhookSecret, Integer auditLogMaxEntries,
-                                       Double recidiveFactor, Integer maxBanTimeSeconds) {
+    public boolean saveGlobalSettings(GlobalSettingsUpdate update) {
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
                 JCRNodeWrapper node = getOrCreateSettingsNode(session);
-                if (activated != null) {
-                    node.setProperty(PROP_ACTIVATED, activated);
-                }
-                if (whitelistIps != null) {
-                    node.setProperty(PROP_WHITELIST_IPS, whitelistIps);
-                }
-                if (ignorePatterns != null) {
-                    node.setProperty(PROP_IGNORE_PATTERNS, ignorePatterns.toArray(new String[0]));
-                }
-                if (trustProxyHeader != null) {
-                    node.setProperty(PROP_TRUST_PROXY_HEADER, trustProxyHeader);
-                }
-                if (emailEnabled != null) {
-                    node.setProperty(PROP_EMAIL_ENABLED, emailEnabled);
-                }
-                if (emailRecipient != null) {
-                    node.setProperty(PROP_EMAIL_RECIPIENT, emailRecipient);
-                }
-                if (webhookUrl != null) {
-                    node.setProperty(PROP_WEBHOOK_URL, webhookUrl);
-                }
-                if (webhookSecret != null) {
-                    if (webhookSecret.isEmpty()) {
-                        if (node.hasProperty(PROP_WEBHOOK_SECRET)) {
-                            node.getProperty(PROP_WEBHOOK_SECRET).remove();
-                        }
-                    } else {
-                        node.setProperty(PROP_WEBHOOK_SECRET, webhookSecret);
-                    }
-                }
-                if (auditLogMaxEntries != null && auditLogMaxEntries > 0) {
-                    node.setProperty(PROP_AUDIT_LOG_MAX, auditLogMaxEntries.longValue());
-                }
-                if (recidiveFactor != null && recidiveFactor >= 1.0) {
-                    node.setProperty(PROP_RECIDIVE_FACTOR, recidiveFactor);
-                }
-                if (maxBanTimeSeconds != null && maxBanTimeSeconds > 0) {
-                    node.setProperty(PROP_MAX_BAN_TIME_SEC, maxBanTimeSeconds.longValue());
-                }
+                applyGlobalSettings(node, update);
                 session.save();
                 return null;
             });
@@ -201,6 +170,61 @@ public class SettingsService {
         } catch (RepositoryException e) {
             LOGGER.error("BFLP: error saving global settings", e);
             return false;
+        }
+    }
+
+    private static void applyGlobalSettings(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
+        applySimpleProps(node, u);
+        applyWebhookSecret(node, u.getWebhookSecret());
+        applyNumericProps(node, u);
+    }
+
+    private static void applySimpleProps(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
+        if (u.getActivated() != null) {
+            node.setProperty(PROP_ACTIVATED, u.getActivated());
+        }
+        if (u.getWhitelistIps() != null) {
+            node.setProperty(PROP_WHITELIST_IPS, u.getWhitelistIps());
+        }
+        if (u.getIgnorePatterns() != null) {
+            node.setProperty(PROP_IGNORE_PATTERNS, u.getIgnorePatterns().toArray(new String[0]));
+        }
+        if (u.getTrustProxyHeader() != null) {
+            node.setProperty(PROP_TRUST_PROXY_HEADER, u.getTrustProxyHeader());
+        }
+        if (u.getEmailEnabled() != null) {
+            node.setProperty(PROP_EMAIL_ENABLED, u.getEmailEnabled());
+        }
+        if (u.getEmailRecipient() != null) {
+            node.setProperty(PROP_EMAIL_RECIPIENT, u.getEmailRecipient());
+        }
+        if (u.getWebhookUrl() != null) {
+            node.setProperty(PROP_WEBHOOK_URL, u.getWebhookUrl());
+        }
+    }
+
+    private static void applyWebhookSecret(JCRNodeWrapper node, String webhookSecret) throws RepositoryException {
+        if (webhookSecret == null) {
+            return;
+        }
+        if (webhookSecret.isEmpty()) {
+            if (node.hasProperty(PROP_WEBHOOK_SECRET)) {
+                node.getProperty(PROP_WEBHOOK_SECRET).remove();
+            }
+        } else {
+            node.setProperty(PROP_WEBHOOK_SECRET, webhookSecret);
+        }
+    }
+
+    private static void applyNumericProps(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
+        if (u.getAuditLogMaxEntries() != null && u.getAuditLogMaxEntries() > 0) {
+            node.setProperty(PROP_AUDIT_LOG_MAX, u.getAuditLogMaxEntries().longValue());
+        }
+        if (u.getRecidiveFactor() != null && u.getRecidiveFactor() >= 1.0) {
+            node.setProperty(PROP_RECIDIVE_FACTOR, u.getRecidiveFactor());
+        }
+        if (u.getMaxBanTimeSeconds() != null && u.getMaxBanTimeSeconds() > 0) {
+            node.setProperty(PROP_MAX_BAN_TIME_SEC, u.getMaxBanTimeSeconds().longValue());
         }
     }
 
@@ -264,7 +288,7 @@ public class SettingsService {
                 JCRNodeWrapper jails = session.getNode(JAILS_NODE_PATH);
                 JCRNodeWrapper jail = jails.addNode(DEFAULT_JAIL_LOGIN, NT_JAIL);
                 jail.setProperty(PROP_JAIL_ENABLED, true);
-                jail.setProperty(PROP_JAIL_MAX_RETRY, (long) DEFAULT_MAX_RETRY);
+                jail.setProperty(PROP_JAIL_MAX_RETRY, DEFAULT_MAX_RETRY);
                 jail.setProperty(PROP_JAIL_FIND_TIME, DEFAULT_FIND_TIME_SEC);
                 jail.setProperty(PROP_JAIL_BAN_TIME, DEFAULT_BAN_TIME_SEC);
                 session.save();
@@ -289,8 +313,16 @@ public class SettingsService {
     }
 
     private static GlobalSettings defaults() {
-        return new GlobalSettings(false, DEFAULT_WHITELIST, Collections.emptyList(), false, false,
-                null, null, null, DEFAULT_AUDIT_LOG_MAX, DEFAULT_RECIDIVE_FACTOR, DEFAULT_MAX_BAN_TIME_SEC);
+        return GlobalSettings.builder()
+                .activated(false)
+                .whitelistIps(DEFAULT_WHITELIST)
+                .ignorePatterns(Collections.emptyList())
+                .trustProxyHeader(false)
+                .emailEnabled(false)
+                .auditLogMaxEntries(DEFAULT_AUDIT_LOG_MAX)
+                .recidiveFactor(DEFAULT_RECIDIVE_FACTOR)
+                .maxBanTimeSec(DEFAULT_MAX_BAN_TIME_SEC)
+                .build();
     }
 
     private static boolean boolProp(JCRNodeWrapper n, String name, boolean def) throws RepositoryException {

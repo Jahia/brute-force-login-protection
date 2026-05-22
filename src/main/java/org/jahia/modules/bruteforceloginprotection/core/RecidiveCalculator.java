@@ -18,7 +18,7 @@ public final class RecidiveCalculator {
                 return capSec;
             }
         }
-        long result = (long) Math.min(duration, (double) Long.MAX_VALUE);
+        long result = (long) Math.min(duration, Long.MAX_VALUE);
         if (capSec > 0 && result > capSec) {
             return capSec;
         }

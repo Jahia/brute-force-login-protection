@@ -1,5 +1,6 @@
 package org.jahia.modules.bruteforceloginprotection;
 
+@SuppressWarnings("java:S1075") // JCR paths use '/' by spec
 public final class BruteForceLoginProtectionConstants {
     private BruteForceLoginProtectionConstants() {}
 

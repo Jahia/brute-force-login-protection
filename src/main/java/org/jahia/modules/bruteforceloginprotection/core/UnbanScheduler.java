@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -79,18 +78,29 @@ public class UnbanScheduler {
             for (BannedIp b : expired) {
                 tracker.removeBanFromJcr(b.getIp());
                 auditLogger.log(AuditLogger.EVENT_UNBAN, b.getIp(), b.getJailName(), b.getSourceName(), "auto-unban");
-                BanContext ctx = new BanContext(b.getIp(), b.getJailName(), b.getSourceName(),
-                        b.getBannedAt(), b.getBannedUntil(), b.getBanCount(), b.getReason(), Collections.emptyMap());
-                for (BanAction action : tracker.getBanActions()) {
-                    try {
-                        action.onUnban(ctx);
-                    } catch (Exception ex) {
-                        LOGGER.debug("BFLP: BanAction {} failed onUnban: {}", action.getName(), ex.getMessage());
-                    }
-                }
+                BanContext ctx = BanContext.builder()
+                        .ip(b.getIp())
+                        .jailName(b.getJailName())
+                        .sourceName(b.getSourceName())
+                        .bannedAt(b.getBannedAt())
+                        .bannedUntil(b.getBannedUntil())
+                        .banCount(b.getBanCount())
+                        .reason(b.getReason())
+                        .build();
+                dispatchUnbanActions(ctx);
             }
         } catch (Exception e) {
             LOGGER.warn("BFLP: unban sweep failed: {}", e.getMessage());
+        }
+    }
+
+    private void dispatchUnbanActions(BanContext ctx) {
+        for (BanAction action : tracker.getBanActions()) {
+            try {
+                action.onUnban(ctx);
+            } catch (Exception ex) {
+                LOGGER.debug("BFLP: BanAction {} failed onUnban: {}", action.getName(), ex.getMessage());
+            }
         }
     }
 }

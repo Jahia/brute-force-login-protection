@@ -59,35 +59,45 @@ public class AuditLogger {
     public List<AuditEntry> list(int limit) {
         try {
             return jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                List<AuditEntry> out = new ArrayList<>();
                 if (!session.nodeExists(AUDIT_NODE_PATH)) {
-                    return out;
+                    return new ArrayList<>();
                 }
-                JCRNodeWrapper container = session.getNode(AUDIT_NODE_PATH);
-                NodeIterator it = container.getNodes();
-                while (it.hasNext()) {
-                    Node n = it.nextNode();
-                    AuditEntry e = new AuditEntry();
-                    e.setId(n.getName());
-                    if (n.hasProperty(PROP_AUDIT_TIMESTAMP)) e.setTimestamp(n.getProperty(PROP_AUDIT_TIMESTAMP).getLong());
-                    if (n.hasProperty(PROP_AUDIT_EVENT)) e.setEvent(n.getProperty(PROP_AUDIT_EVENT).getString());
-                    if (n.hasProperty(PROP_AUDIT_IP)) e.setIp(n.getProperty(PROP_AUDIT_IP).getString());
-                    if (n.hasProperty(PROP_AUDIT_JAIL)) e.setJail(n.getProperty(PROP_AUDIT_JAIL).getString());
-                    if (n.hasProperty(PROP_AUDIT_SOURCE)) e.setSource(n.getProperty(PROP_AUDIT_SOURCE).getString());
-                    if (n.hasProperty(PROP_AUDIT_DETAILS)) e.setDetails(n.getProperty(PROP_AUDIT_DETAILS).getString());
-                    out.add(e);
-                }
-                // newest first
+                List<AuditEntry> out = readAllEntries(session.getNode(AUDIT_NODE_PATH));
                 out.sort((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()));
-                if (limit > 0 && out.size() > limit) {
-                    return new ArrayList<>(out.subList(0, limit));
-                }
-                return out;
+                return applyLimit(out, limit);
             });
         } catch (RepositoryException e) {
             LOGGER.error("BFLP: failed to list audit entries", e);
             return new ArrayList<>();
         }
+    }
+
+    private static List<AuditEntry> readAllEntries(JCRNodeWrapper container) throws RepositoryException {
+        List<AuditEntry> out = new ArrayList<>();
+        NodeIterator it = container.getNodes();
+        while (it.hasNext()) {
+            out.add(toEntry(it.nextNode()));
+        }
+        return out;
+    }
+
+    private static AuditEntry toEntry(Node n) throws RepositoryException {
+        AuditEntry e = new AuditEntry();
+        e.setId(n.getName());
+        if (n.hasProperty(PROP_AUDIT_TIMESTAMP)) e.setTimestamp(n.getProperty(PROP_AUDIT_TIMESTAMP).getLong());
+        if (n.hasProperty(PROP_AUDIT_EVENT)) e.setEvent(n.getProperty(PROP_AUDIT_EVENT).getString());
+        if (n.hasProperty(PROP_AUDIT_IP)) e.setIp(n.getProperty(PROP_AUDIT_IP).getString());
+        if (n.hasProperty(PROP_AUDIT_JAIL)) e.setJail(n.getProperty(PROP_AUDIT_JAIL).getString());
+        if (n.hasProperty(PROP_AUDIT_SOURCE)) e.setSource(n.getProperty(PROP_AUDIT_SOURCE).getString());
+        if (n.hasProperty(PROP_AUDIT_DETAILS)) e.setDetails(n.getProperty(PROP_AUDIT_DETAILS).getString());
+        return e;
+    }
+
+    private static List<AuditEntry> applyLimit(List<AuditEntry> entries, int limit) {
+        if (limit > 0 && entries.size() > limit) {
+            return new ArrayList<>(entries.subList(0, limit));
+        }
+        return entries;
     }
 
     public boolean clear() {

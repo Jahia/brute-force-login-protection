@@ -18,16 +18,15 @@ public class BanContext implements Serializable {
     private final String reason;
     private final Map<String, String> extras;
 
-    public BanContext(String ip, String jailName, String sourceName, long bannedAt, long bannedUntil,
-                      int banCount, String reason, Map<String, String> extras) {
-        this.ip = ip;
-        this.jailName = jailName;
-        this.sourceName = sourceName;
-        this.bannedAt = bannedAt;
-        this.bannedUntil = bannedUntil;
-        this.banCount = banCount;
-        this.reason = reason;
-        this.extras = extras == null ? Collections.emptyMap() : new HashMap<>(extras);
+    private BanContext(Builder b) {
+        this.ip = b.ip;
+        this.jailName = b.jailName;
+        this.sourceName = b.sourceName;
+        this.bannedAt = b.bannedAt;
+        this.bannedUntil = b.bannedUntil;
+        this.banCount = b.banCount;
+        this.reason = b.reason;
+        this.extras = b.extras == null ? Collections.emptyMap() : new HashMap<>(b.extras);
     }
 
     public String getIp() { return ip; }
@@ -38,4 +37,32 @@ public class BanContext implements Serializable {
     public int getBanCount() { return banCount; }
     public String getReason() { return reason; }
     public Map<String, String> getExtras() { return extras; }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private String ip;
+        private String jailName;
+        private String sourceName;
+        private long bannedAt;
+        private long bannedUntil;
+        private int banCount;
+        private String reason;
+        private Map<String, String> extras;
+
+        public Builder ip(String v) { this.ip = v; return this; }
+        public Builder jailName(String v) { this.jailName = v; return this; }
+        public Builder sourceName(String v) { this.sourceName = v; return this; }
+        public Builder bannedAt(long v) { this.bannedAt = v; return this; }
+        public Builder bannedUntil(long v) { this.bannedUntil = v; return this; }
+        public Builder banCount(int v) { this.banCount = v; return this; }
+        public Builder reason(String v) { this.reason = v; return this; }
+        public Builder extras(Map<String, String> v) { this.extras = v; return this; }
+
+        public BanContext build() {
+            return new BanContext(this);
+        }
+    }
 }

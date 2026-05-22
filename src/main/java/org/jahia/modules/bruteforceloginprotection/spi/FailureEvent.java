@@ -18,17 +18,15 @@ public class FailureEvent implements Serializable {
     private final String requestPath;
     private final Map<String, String> extras;
 
-    public FailureEvent(String ip, String sourceName, String jailName, long timestampMs,
-                        String username, String userAgent, String requestPath,
-                        Map<String, String> extras) {
-        this.ip = ip;
-        this.sourceName = sourceName;
-        this.jailName = jailName;
-        this.timestampMs = timestampMs;
-        this.username = username;
-        this.userAgent = userAgent;
-        this.requestPath = requestPath;
-        this.extras = extras == null ? Collections.emptyMap() : new HashMap<>(extras);
+    private FailureEvent(Builder b) {
+        this.ip = b.ip;
+        this.sourceName = b.sourceName;
+        this.jailName = b.jailName;
+        this.timestampMs = b.timestampMs;
+        this.username = b.username;
+        this.userAgent = b.userAgent;
+        this.requestPath = b.requestPath;
+        this.extras = b.extras == null ? Collections.emptyMap() : new HashMap<>(b.extras);
     }
 
     public String getIp() { return ip; }
@@ -39,4 +37,32 @@ public class FailureEvent implements Serializable {
     public String getUserAgent() { return userAgent; }
     public String getRequestPath() { return requestPath; }
     public Map<String, String> getExtras() { return extras; }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private String ip;
+        private String sourceName;
+        private String jailName;
+        private long timestampMs;
+        private String username;
+        private String userAgent;
+        private String requestPath;
+        private Map<String, String> extras;
+
+        public Builder ip(String v) { this.ip = v; return this; }
+        public Builder sourceName(String v) { this.sourceName = v; return this; }
+        public Builder jailName(String v) { this.jailName = v; return this; }
+        public Builder timestampMs(long v) { this.timestampMs = v; return this; }
+        public Builder username(String v) { this.username = v; return this; }
+        public Builder userAgent(String v) { this.userAgent = v; return this; }
+        public Builder requestPath(String v) { this.requestPath = v; return this; }
+        public Builder extras(Map<String, String> v) { this.extras = v; return this; }
+
+        public FailureEvent build() {
+            return new FailureEvent(this);
+        }
+    }
 }

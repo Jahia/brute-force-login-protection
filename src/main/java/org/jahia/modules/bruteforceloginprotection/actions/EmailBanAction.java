@@ -47,7 +47,7 @@ public class EmailBanAction implements BanAction {
         MailService mailService;
         try {
             mailService = MailService.getInstance();
-        } catch (Throwable t) {
+        } catch (Exception t) {
             LOGGER.debug("BFLP: MailService unavailable: {}", t.getMessage());
             return;
         }

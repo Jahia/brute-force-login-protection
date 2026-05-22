@@ -51,7 +51,6 @@ public class HazelcastInstanceManager implements Runnable {
     private ClassLoader classLoader;
     private HazelcastInstance hazelcastInstance;
     private Set<String> discoveredMembers;
-    private ClusterManager clusterManager;
 
     @Reference(service = DiscoveryService.class,
             policy = ReferencePolicy.DYNAMIC,
@@ -68,11 +67,11 @@ public class HazelcastInstanceManager implements Runnable {
 
     @Reference(cardinality = ReferenceCardinality.OPTIONAL)
     public void setClusterManager(ClusterManager clusterManager) {
-        this.clusterManager = clusterManager;
+        // OSGi reference kept for declarative service wiring; no internal state needed.
     }
 
-    public void unsetClusterManager(ClusterManager clusterManager) {
-        this.clusterManager = null;
+    public void unsetClusterManager() {
+        // no-op
     }
 
     public HazelcastInstance getHazelcastInstance() {
@@ -211,7 +210,7 @@ public class HazelcastInstanceManager implements Runnable {
 
     private Set<String> getCurrentMembers() {
         Set<String> discoveredMemberSet = new HashSet<>();
-        if (discoveryServices != null && !discoveryServices.isEmpty()) {
+        if (!discoveryServices.isEmpty()) {
             for (DiscoveryService service : discoveryServices) {
                 try {
                     service.refresh();

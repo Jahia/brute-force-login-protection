@@ -22,13 +22,13 @@ public final class ClassLoaderUtil {
 
     private static final boolean CLASS_CACHE_DISABLED = Boolean.getBoolean("hazelcast.compat.classloading.cache.disabled");
 
-    private static final Map<String, Class> PRIMITIVE_CLASSES;
+    private static final Map<String, Class<?>> PRIMITIVE_CLASSES;
     private static final int MAX_PRIM_CLASS_NAME_LENGTH = 7;
 
-    private static final ClassLoaderWeakCache<Class> CLASS_CACHE = new ClassLoaderWeakCache<Class>();
+    private static final ClassLoaderWeakCache<Class<?>> CLASS_CACHE = new ClassLoaderWeakCache<>();
 
     static {
-        final Map<String, Class> primitives = new HashMap<String, Class>(10, 1.0f);
+        final Map<String, Class<?>> primitives = new HashMap<>(10, 1.0f);
         primitives.put("boolean", boolean.class);
         primitives.put("byte", byte.class);
         primitives.put("int", int.class);
@@ -79,7 +79,7 @@ public final class ClassLoaderUtil {
 
     private static Class<?> tryPrimitiveClass(String className) {
         if (className.length() <= MAX_PRIM_CLASS_NAME_LENGTH && Character.isLowerCase(className.charAt(0))) {
-            final Class primitiveClass = PRIMITIVE_CLASSES.get(className);
+            final Class<?> primitiveClass = PRIMITIVE_CLASSES.get(className);
             if (primitiveClass != null) {
                 return primitiveClass;
             }
@@ -110,20 +110,20 @@ public final class ClassLoaderUtil {
         private final ConcurrentMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>> cache;
 
         private ClassLoaderWeakCache() {
-            cache = new ConcurrentReferenceHashMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>>(16);
+            cache = new ConcurrentReferenceHashMap<>(16);
         }
 
         private void put(ClassLoader classLoader, String className, V value) {
             ClassLoader cl = classLoader == null ? ClassLoaderUtil.class.getClassLoader() : classLoader;
             ConcurrentMap<String, WeakReference<V>> innerCache = cache.get(cl);
             if (innerCache == null) {
-                innerCache = new ConcurrentHashMap<String, WeakReference<V>>(100);
+                innerCache = new ConcurrentHashMap<>(100);
                 ConcurrentMap<String, WeakReference<V>> old = cache.putIfAbsent(cl, innerCache);
                 if (old != null) {
                     innerCache = old;
                 }
             }
-            innerCache.put(className, new WeakReference<V>(value));
+            innerCache.put(className, new WeakReference<>(value));
         }
 
         public V get(ClassLoader classloader, String className) {
