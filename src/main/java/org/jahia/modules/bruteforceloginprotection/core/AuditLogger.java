@@ -12,6 +12,9 @@ import org.slf4j.LoggerFactory;
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.RepositoryException;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -34,14 +37,20 @@ public class AuditLogger {
     @Reference
     private SettingsService settingsService;
 
+    private static final DateTimeFormatter BUCKET_YEAR = DateTimeFormatter.ofPattern("yyyy");
+    private static final DateTimeFormatter BUCKET_MONTH = DateTimeFormatter.ofPattern("MM");
+    private static final DateTimeFormatter BUCKET_DAY = DateTimeFormatter.ofPattern("dd");
+
     public void log(String event, String ip, String jail, String source, String details) {
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
                 settingsService.getOrCreateSettingsNode(session);
                 JCRNodeWrapper container = session.getNode(AUDIT_NODE_PATH);
-                String name = "e-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
-                JCRNodeWrapper entry = container.addNode(name, NT_AUDIT_ENTRY);
-                entry.setProperty(PROP_AUDIT_TIMESTAMP, System.currentTimeMillis());
+                long now = System.currentTimeMillis();
+                JCRNodeWrapper bucket = getOrCreateDateBucket(container, now);
+                String name = "e-" + now + "-" + UUID.randomUUID().toString().substring(0, 8);
+                JCRNodeWrapper entry = bucket.addNode(name, NT_AUDIT_ENTRY);
+                entry.setProperty(PROP_AUDIT_TIMESTAMP, now);
                 entry.setProperty(PROP_AUDIT_EVENT, event);
                 if (ip != null) entry.setProperty(PROP_AUDIT_IP, ip);
                 if (jail != null) entry.setProperty(PROP_AUDIT_JAIL, jail);
@@ -54,6 +63,24 @@ public class AuditLogger {
         } catch (RepositoryException e) {
             LOGGER.warn("BFLP: failed to write audit entry: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Returns (creating if necessary) the {@code yyyy/MM/dd} folder under the audit container.
+     * Mirrors the contract advertised by the {@code jmix:autoSplitFolders} mixin on the container
+     * — we do it explicitly because Jahia's auto-split runtime is sensitive to how the parent was
+     * looked up, and in this code path the children landed flat under the container despite the
+     * mixin being correctly applied.
+     */
+    private static JCRNodeWrapper getOrCreateDateBucket(JCRNodeWrapper container, long epochMs) throws RepositoryException {
+        ZonedDateTime now = ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(epochMs), ZoneOffset.UTC);
+        JCRNodeWrapper year = ensureFolder(container, BUCKET_YEAR.format(now));
+        JCRNodeWrapper month = ensureFolder(year, BUCKET_MONTH.format(now));
+        return ensureFolder(month, BUCKET_DAY.format(now));
+    }
+
+    private static JCRNodeWrapper ensureFolder(JCRNodeWrapper parent, String name) throws RepositoryException {
+        return parent.hasNode(name) ? parent.getNode(name) : parent.addNode(name, "jnt:contentFolder");
     }
 
     public List<AuditEntry> list(int limit) {
