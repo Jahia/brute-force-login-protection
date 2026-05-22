@@ -50,6 +50,7 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
         s.add("java.util.LinkedHashSet");
         s.add("java.util.TreeMap");
         s.add("java.util.TreeSet");
+        s.add("java.util.ArrayDeque"); // FailureWindow stores failure timestamps in an ArrayDeque
         // Time/identity
         s.add("java.util.Date");
         s.add("java.time.Instant");

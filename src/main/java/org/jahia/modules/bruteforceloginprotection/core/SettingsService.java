@@ -288,11 +288,31 @@ public class SettingsService {
      * JCR anchor for ban + audit children defined in the CND.
      */
     public JCRNodeWrapper getOrCreateSettingsNode(JCRSessionWrapper session) throws RepositoryException {
+        JCRNodeWrapper node;
+        boolean dirty = false;
         if (session.nodeExists(NODE_PATH)) {
-            return session.getNode(NODE_PATH);
+            node = session.getNode(NODE_PATH);
+        } else {
+            JCRNodeWrapper settingsRoot = session.getNode(NODE_SETTINGS_PATH);
+            node = settingsRoot.addNode(NODE_NAME, NT_SETTINGS);
+            dirty = true;
         }
-        JCRNodeWrapper settingsRoot = session.getNode(NODE_SETTINGS_PATH);
-        return settingsRoot.addNode(NODE_NAME, NT_SETTINGS);
+        // The CND declares bans + auditLog as autocreated, but Jackrabbit doesn't always
+        // materialise autocreated typed children on addNode — observed in the deployed bundle as
+        // PathNotFoundException on the very next session.getNode(BANS_NODE_PATH). Create them
+        // explicitly so callers can address the paths immediately, then save once.
+        if (!node.hasNode(BANS_NODE_NAME)) {
+            node.addNode(BANS_NODE_NAME, NT_BANS_CONTAINER);
+            dirty = true;
+        }
+        if (!node.hasNode(AUDIT_NODE_NAME)) {
+            node.addNode(AUDIT_NODE_NAME, NT_AUDIT_CONTAINER);
+            dirty = true;
+        }
+        if (dirty) {
+            session.save();
+        }
+        return node;
     }
 
     public JCRTemplate getJcrTemplate() {
