@@ -63,6 +63,40 @@ Go to **Administration → Server settings → Configuration → Brute force log
 - **Audit** — browse recent events, clear the log.
 - **Integrations** — configure the email recipient and the webhook URL/secret.
 
+### Where settings are stored
+
+Global settings and jail definitions are persisted as OSGi configuration under
+`<jahia-var>/karaf/etc/`. Bans and the audit log remain JCR-backed (they are runtime
+state, not configuration).
+
+| Kind | PID | Example filename |
+|------|-----|------------------|
+| Global settings (singleton) | `org.jahia.modules.bruteforceloginprotection.global` | `org.jahia.modules.bruteforceloginprotection.global.cfg` |
+| Jail definition (factory) | `org.jahia.modules.bruteforceloginprotection.jail` | `org.jahia.modules.bruteforceloginprotection.jail-login.cfg` |
+
+A jail `.cfg` MUST contain a `name=<jail-id>` property — that string is the jail
+identifier seen by the engine and the admin UI. The filename discriminator after
+`jail-` is only used by Felix to uniquely key the configuration on disk.
+
+Operator-pasted plaintext is supported for `webhook_secret`: the module re-encrypts
+it on the next save (prefix `{enc}`). The GraphQL mutation honours the same
+tri-state contract as before — `null` keeps the stored secret, `""` clears it, any
+other value replaces it.
+
+Default example `.cfg` files are shipped under `src/main/resources/META-INF/configurations/`
+and are dropped into `karaf/etc/` on first deploy.
+
+### Cluster behaviour
+
+OSGi `ConfigurationAdmin` storage is per-node. In a Jahia cluster you must either:
+
+- rely on **Karaf Cellar** to synchronise `karaf/etc/` across nodes (the default
+  for clusters already running this module — Cellar is shipped with Jahia
+  clustering), or
+- ensure all nodes mount/share the same `digital-factory-data/karaf/etc/` directory.
+
+No additional Hazelcast broadcasting of settings is performed by the module.
+
 ### Webhook receiver guidance
 
 When verifying the `X-BFLP-Signature` header on the receiver side, **always use a constant-time
@@ -88,3 +122,8 @@ Configure Jahia's mail server settings to receive notification emails.
 ## Upgrading from 2.x
 
 **v3.0.0 is a breaking change.** Both the JCR settings schema and the GraphQL schema were rewritten — there is no automatic migration. After upgrading the bundle, settings must be re-entered from the admin UI. The old `nb_failed_login_max` / `time_to_idle` / `bruteForceLoginProtectionSettings` GraphQL endpoint no longer exists; use jails and `bruteForceLoginProtectionGlobalSettings` instead.
+
+In addition, starting from v3.0.0-SNAPSHOT the global settings and jail definitions
+moved out of JCR and into OSGi `ConfigurationAdmin` (see *Where settings are stored*
+above). Existing in-flight v3 snapshot installs must re-enter their settings — JCR
+values are no longer read.

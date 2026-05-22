@@ -157,6 +157,7 @@
               org.apache.karaf.cellar.core.utils,
               org.jahia.modules.graphql.provider.dxm;version="[2.6,4)",
               org.jahia.modules.graphql.provider.dxm.security;version="[2.6,4)",
+              org.osgi.service.cm;version="[1.5,2)",
               *
             </Import-Package>
           </instructions>

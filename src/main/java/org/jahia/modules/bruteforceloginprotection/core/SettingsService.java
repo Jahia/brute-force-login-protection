@@ -1,194 +1,121 @@
 package org.jahia.modules.bruteforceloginprotection.core;
 
 import org.apache.commons.lang.StringUtils;
-import org.jahia.api.Constants;
 import org.jahia.modules.bruteforceloginprotection.actions.WebhookUrlValidator;
-import org.jahia.services.content.JCRCallback;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.JCRTemplate;
-import org.jahia.utils.EncryptionUtils;
-import org.osgi.service.component.annotations.Activate;
+import org.osgi.framework.InvalidSyntaxException;
+import org.osgi.service.cm.Configuration;
+import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.NodeIterator;
 import javax.jcr.RepositoryException;
-import javax.jcr.Value;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
+import java.io.IOException;
+import java.util.Dictionary;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants.*;
 
+/**
+ * Facade in front of the OSGi-{@link ConfigurationAdmin}-backed configuration components
+ * ({@link GlobalConfigHolder}, {@link JailConfigTracker}). Reads delegate to the in-memory
+ * snapshots maintained by those components; writes go through {@code ConfigurationAdmin} so
+ * Felix file-install rewrites the corresponding {@code .cfg} on disk.
+ *
+ * <p>This class also exposes {@link #getOrCreateSettingsNode(JCRSessionWrapper)} which is still
+ * required by {@link AuditLogger} and {@code BruteForceTracker} to create the JCR parent node that
+ * hosts the ban + audit child containers (those remain JCR-backed as runtime state).</p>
+ */
 @Component(immediate = true, service = SettingsService.class)
 public class SettingsService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SettingsService.class);
 
+    private static final int AUDIT_LOG_MIN = 100;
+    private static final int AUDIT_LOG_MAX = 100_000;
+
+    @Reference
+    private ConfigurationAdmin configurationAdmin;
+
+    @Reference
+    private GlobalConfigHolder globalConfigHolder;
+
+    @Reference
+    private JailConfigTracker jailConfigTracker;
+
+    // JCR template is still needed: bans + audit log remain JCR-backed runtime state and need
+    // the /settings/bruteforceloginprotection parent node to attach to. Tests inject this field
+    // by reflection — do not rename without updating BruteForceTrackerTest.
     @Reference
     private JCRTemplate jcrTemplate;
 
-    private final AtomicReference<GlobalSettings> cachedSettings = new AtomicReference<>();
-    private final AtomicReference<Map<String, JailConfig>> cachedJails = new AtomicReference<>();
-
-    @Activate
-    public void start() {
-        try {
-            bootstrap();
-        } catch (Exception e) {
-            LOGGER.warn("BFLP: could not bootstrap settings node at activation: {}", e.getMessage());
-        }
-        invalidate();
-    }
-
-    public void invalidate() {
-        cachedSettings.set(null);
-        cachedJails.set(null);
-    }
+    // -------------------------------------------------------------------------------------------
+    // Read path — purely in-memory snapshots refreshed by the OSGi config listeners.
+    // -------------------------------------------------------------------------------------------
 
     public GlobalSettings getGlobalSettings() {
-        GlobalSettings s = cachedSettings.get();
-        if (s != null) {
-            return s;
-        }
-        s = readGlobalSettings();
-        cachedSettings.set(s);
-        return s;
+        return globalConfigHolder != null
+                ? globalConfigHolder.getGlobalSettings()
+                : GlobalConfigHolder.defaults();
     }
 
     public Map<String, JailConfig> getJails() {
-        Map<String, JailConfig> j = cachedJails.get();
-        if (j != null) {
-            return j;
-        }
-        j = readJails();
-        cachedJails.set(j);
-        return j;
+        return jailConfigTracker != null
+                ? jailConfigTracker.getJails()
+                : new JailConfigTracker().getJails();
     }
 
     public JailConfig getJail(String name) {
-        if (name == null) {
-            return null;
-        }
-        JailConfig jc = getJails().get(name);
-        if (jc != null) {
-            return jc;
-        }
-        // sensible defaults if not found
-        return new JailConfig(name, true, DEFAULT_MAX_RETRY, DEFAULT_FIND_TIME_SEC, DEFAULT_BAN_TIME_SEC);
+        return jailConfigTracker != null
+                ? jailConfigTracker.getJail(name)
+                : new JailConfig(name, true, DEFAULT_MAX_RETRY, DEFAULT_FIND_TIME_SEC, DEFAULT_BAN_TIME_SEC);
     }
 
-    private GlobalSettings readGlobalSettings() {
-        try {
-            return jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null,
-                    (JCRCallback<GlobalSettings>) session -> {
-                        if (!session.nodeExists(NODE_PATH)) {
-                            return defaults();
-                        }
-                        JCRNodeWrapper node = session.getNode(NODE_PATH);
-                        boolean activated = boolProp(node, PROP_ACTIVATED, false);
-                        String whitelist = stringProp(node, PROP_WHITELIST_IPS, DEFAULT_WHITELIST);
-                        List<String> ignore = stringArrayProp(node, PROP_IGNORE_PATTERNS);
-                        boolean trustProxy = boolProp(node, PROP_TRUST_PROXY_HEADER, false);
-                        List<String> trustedProxyCidrs = stringArrayProp(node, PROP_TRUSTED_PROXY_CIDRS);
-                        boolean emailEnabled = boolProp(node, PROP_EMAIL_ENABLED, false);
-                        String emailRecipient = stringProp(node, PROP_EMAIL_RECIPIENT, null);
-                        String webhookUrl = stringProp(node, PROP_WEBHOOK_URL, null);
-                        String webhookSecret = decryptWebhookSecret(stringProp(node, PROP_WEBHOOK_SECRET, null));
-                        int auditMax = (int) longProp(node, PROP_AUDIT_LOG_MAX, DEFAULT_AUDIT_LOG_MAX);
-                        double recidive = doubleProp(node, PROP_RECIDIVE_FACTOR, DEFAULT_RECIDIVE_FACTOR);
-                        long maxBan = longProp(node, PROP_MAX_BAN_TIME_SEC, DEFAULT_MAX_BAN_TIME_SEC);
-                        return GlobalSettings.builder()
-                                .activated(activated)
-                                .whitelistIps(whitelist)
-                                .ignorePatterns(ignore)
-                                .trustProxyHeader(trustProxy)
-                                .trustedProxyCidrs(trustedProxyCidrs)
-                                .emailEnabled(emailEnabled)
-                                .emailRecipient(emailRecipient)
-                                .webhookUrl(webhookUrl)
-                                .webhookSecret(webhookSecret)
-                                .auditLogMaxEntries(auditMax)
-                                .recidiveFactor(recidive)
-                                .maxBanTimeSec(maxBan)
-                                .build();
-                    });
-        } catch (RepositoryException e) {
-            LOGGER.error("BFLP: error reading global settings, returning defaults", e);
-            return defaults();
-        }
-    }
-
-    private Map<String, JailConfig> readJails() {
-        try {
-            return jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null,
-                    (JCRCallback<Map<String, JailConfig>>) session -> {
-                        Map<String, JailConfig> map = new HashMap<>();
-                        if (!session.nodeExists(JAILS_NODE_PATH)) {
-                            map.put(DEFAULT_JAIL_LOGIN, new JailConfig(DEFAULT_JAIL_LOGIN, true,
-                                    DEFAULT_MAX_RETRY, DEFAULT_FIND_TIME_SEC, DEFAULT_BAN_TIME_SEC));
-                            return map;
-                        }
-                        JCRNodeWrapper jails = session.getNode(JAILS_NODE_PATH);
-                        NodeIterator it = jails.getNodes();
-                        while (it.hasNext()) {
-                            JCRNodeWrapper n = (JCRNodeWrapper) it.nextNode();
-                            String name = n.getName();
-                            boolean enabled = boolProp(n, PROP_JAIL_ENABLED, true);
-                            int maxRetry = (int) longProp(n, PROP_JAIL_MAX_RETRY, DEFAULT_MAX_RETRY);
-                            long findTime = longProp(n, PROP_JAIL_FIND_TIME, DEFAULT_FIND_TIME_SEC);
-                            long banTime = longProp(n, PROP_JAIL_BAN_TIME, DEFAULT_BAN_TIME_SEC);
-                            map.put(name, new JailConfig(name, enabled, maxRetry, findTime, banTime));
-                        }
-                        if (map.isEmpty()) {
-                            map.put(DEFAULT_JAIL_LOGIN, new JailConfig(DEFAULT_JAIL_LOGIN, true,
-                                    DEFAULT_MAX_RETRY, DEFAULT_FIND_TIME_SEC, DEFAULT_BAN_TIME_SEC));
-                        }
-                        return map;
-                    });
-        } catch (RepositoryException e) {
-            LOGGER.error("BFLP: error reading jails, returning default", e);
-            Map<String, JailConfig> map = new HashMap<>();
-            map.put(DEFAULT_JAIL_LOGIN, new JailConfig(DEFAULT_JAIL_LOGIN, true,
-                    DEFAULT_MAX_RETRY, DEFAULT_FIND_TIME_SEC, DEFAULT_BAN_TIME_SEC));
-            return map;
-        }
-    }
+    // -------------------------------------------------------------------------------------------
+    // Write path — delegate to ConfigurationAdmin so Felix file-install persists to disk.
+    // -------------------------------------------------------------------------------------------
 
     public boolean saveGlobalSettings(GlobalSettingsUpdate update) {
+        if (update == null) {
+            return false;
+        }
+        if (configurationAdmin == null) {
+            LOGGER.error("BFLP: ConfigurationAdmin unavailable; cannot persist global settings");
+            return false;
+        }
         try {
-            jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                JCRNodeWrapper node = getOrCreateSettingsNode(session);
-                applyGlobalSettings(node, update);
-                session.save();
-                return null;
-            });
-            invalidate();
+            Configuration cfg = configurationAdmin.getConfiguration(GlobalConfigHolder.PID, "?");
+            Dictionary<String, Object> props = cfg.getProperties();
+            if (props == null) {
+                props = new Hashtable<>();
+            }
+            applyGlobalUpdate(props, update);
+            cfg.update(props);
             return true;
-        } catch (RepositoryException e) {
-            LOGGER.error("BFLP: error saving global settings", e);
+        } catch (IOException e) {
+            LOGGER.error("BFLP: error saving global settings via ConfigurationAdmin", e);
             return false;
         }
     }
 
-    private static void applyGlobalSettings(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
-        applySimpleProps(node, u);
-        applyWebhookSecret(node, u.getWebhookSecret());
-        applyNumericProps(node, u);
+    private static void applyGlobalUpdate(Dictionary<String, Object> props, GlobalSettingsUpdate u) {
+        applySimpleGlobalUpdate(props, u);
+        applyWebhookSecretUpdate(props, u.getWebhookSecret());
+        applyNumericGlobalUpdate(props, u);
     }
 
-    private static void applySimpleProps(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
+    private static void applySimpleGlobalUpdate(Dictionary<String, Object> props, GlobalSettingsUpdate u) {
         if (u.getActivated() != null) {
-            node.setProperty(PROP_ACTIVATED, u.getActivated());
+            props.put(GlobalConfigHolder.CFG_ACTIVATED, String.valueOf(u.getActivated()));
         }
         if (u.getWhitelistIps() != null) {
-            node.setProperty(PROP_WHITELIST_IPS, u.getWhitelistIps());
+            props.put(GlobalConfigHolder.CFG_WHITELIST, u.getWhitelistIps());
         }
         if (u.getIgnorePatterns() != null) {
             for (String p : u.getIgnorePatterns()) {
@@ -196,217 +123,180 @@ public class SettingsService {
                     RegexSafetyCheck.assertSafe(p);
                 }
             }
-            node.setProperty(PROP_IGNORE_PATTERNS, u.getIgnorePatterns().toArray(new String[0]));
+            props.put(GlobalConfigHolder.CFG_IGNORE_PATTERNS, joinList(u.getIgnorePatterns()));
         }
         if (u.getTrustProxyHeader() != null) {
-            node.setProperty(PROP_TRUST_PROXY_HEADER, u.getTrustProxyHeader());
+            props.put(GlobalConfigHolder.CFG_TRUST_PROXY, String.valueOf(u.getTrustProxyHeader()));
+        }
+        if (u.getTrustedProxyCidrs() != null) {
+            props.put(GlobalConfigHolder.CFG_TRUSTED_PROXY_CIDRS, joinList(u.getTrustedProxyCidrs()));
         }
         if (u.getEmailEnabled() != null) {
-            node.setProperty(PROP_EMAIL_ENABLED, u.getEmailEnabled());
+            props.put(GlobalConfigHolder.CFG_EMAIL_ENABLED, String.valueOf(u.getEmailEnabled()));
         }
         if (u.getEmailRecipient() != null) {
-            node.setProperty(PROP_EMAIL_RECIPIENT, u.getEmailRecipient());
+            props.put(GlobalConfigHolder.CFG_EMAIL_RECIPIENT, u.getEmailRecipient());
         }
         if (u.getWebhookUrl() != null) {
             if (!u.getWebhookUrl().isEmpty()) {
                 WebhookUrlValidator.validateUrl(u.getWebhookUrl());
             }
-            node.setProperty(PROP_WEBHOOK_URL, u.getWebhookUrl());
-        }
-        if (u.getTrustedProxyCidrs() != null) {
-            node.setProperty(PROP_TRUSTED_PROXY_CIDRS, u.getTrustedProxyCidrs().toArray(new String[0]));
+            props.put(GlobalConfigHolder.CFG_WEBHOOK_URL, u.getWebhookUrl());
         }
     }
 
-    private static void applyWebhookSecret(JCRNodeWrapper node, String webhookSecret) throws RepositoryException {
-        if (webhookSecret == null) {
+    /**
+     * Tri-state webhook secret handling:
+     * <ul>
+     *   <li>{@code null} → keep existing dictionary entry untouched.</li>
+     *   <li>{@code ""}   → remove the property from the dictionary (operator clear).</li>
+     *   <li>non-empty   → encrypt with the {@code {enc}} marker and replace.</li>
+     * </ul>
+     * If an operator pasted plaintext into the .cfg, we also re-encrypt-in-place here so the next
+     * persisted dictionary is encrypted.
+     */
+    private static void applyWebhookSecretUpdate(Dictionary<String, Object> props, String newSecret) {
+        Object existing = props.get(GlobalConfigHolder.CFG_WEBHOOK_SECRET);
+        if (newSecret == null) {
+            // Unchanged from caller's POV. Opportunistically re-encrypt operator-pasted plaintext.
+            if (existing != null && !WebhookSecretCodec.isEncrypted(String.valueOf(existing))) {
+                String reEncrypted = WebhookSecretCodec.encrypt(String.valueOf(existing));
+                if (reEncrypted != null) {
+                    props.put(GlobalConfigHolder.CFG_WEBHOOK_SECRET, reEncrypted);
+                }
+            }
             return;
         }
-        if (webhookSecret.isEmpty()) {
-            if (node.hasProperty(PROP_WEBHOOK_SECRET)) {
-                node.getProperty(PROP_WEBHOOK_SECRET).remove();
-            }
-        } else {
-            node.setProperty(PROP_WEBHOOK_SECRET, encryptWebhookSecret(webhookSecret));
+        if (newSecret.isEmpty()) {
+            props.remove(GlobalConfigHolder.CFG_WEBHOOK_SECRET);
+            return;
         }
+        props.put(GlobalConfigHolder.CFG_WEBHOOK_SECRET, WebhookSecretCodec.encrypt(newSecret));
     }
 
-    private static final String ENC_PREFIX = "{enc}";
-
-    private static String encryptWebhookSecret(String plain) {
-        if (plain == null) {
-            return null;
-        }
-        try {
-            return ENC_PREFIX + EncryptionUtils.passwordBaseEncrypt(plain);
-        } catch (Exception e) {
-            LOGGER.warn("BFLP: failed to encrypt webhookSecret, storing plaintext fallback: {}", e.getMessage());
-            return plain;
-        }
-    }
-
-    static String decryptWebhookSecret(String stored) {
-        if (stored == null || !stored.startsWith(ENC_PREFIX)) {
-            return stored; // legacy plaintext or null — migration path
-        }
-        try {
-            return EncryptionUtils.passwordBaseDecrypt(stored.substring(ENC_PREFIX.length()));
-        } catch (Exception e) {
-            LOGGER.warn("BFLP: failed to decrypt webhookSecret: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private static final int AUDIT_LOG_MIN = 100;
-    private static final int AUDIT_LOG_MAX = 100_000;
-
-    private static void applyNumericProps(JCRNodeWrapper node, GlobalSettingsUpdate u) throws RepositoryException {
+    private static void applyNumericGlobalUpdate(Dictionary<String, Object> props, GlobalSettingsUpdate u) {
         if (u.getAuditLogMaxEntries() != null && u.getAuditLogMaxEntries() > 0) {
             int clamped = Math.max(AUDIT_LOG_MIN, Math.min(AUDIT_LOG_MAX, u.getAuditLogMaxEntries()));
             if (clamped != u.getAuditLogMaxEntries()) {
                 LOGGER.info("BFLP: auditLogMaxEntries clamped from {} to {} (range [{}, {}])",
                         u.getAuditLogMaxEntries(), clamped, AUDIT_LOG_MIN, AUDIT_LOG_MAX);
             }
-            node.setProperty(PROP_AUDIT_LOG_MAX, (long) clamped);
+            props.put(GlobalConfigHolder.CFG_AUDIT_LOG_MAX, String.valueOf(clamped));
         }
         if (u.getRecidiveFactor() != null && u.getRecidiveFactor() >= 1.0) {
-            node.setProperty(PROP_RECIDIVE_FACTOR, u.getRecidiveFactor());
+            props.put(GlobalConfigHolder.CFG_RECIDIVE_FACTOR, String.valueOf(u.getRecidiveFactor()));
         }
         if (u.getMaxBanTimeSeconds() != null && u.getMaxBanTimeSeconds() > 0) {
-            node.setProperty(PROP_MAX_BAN_TIME_SEC, u.getMaxBanTimeSeconds().longValue());
+            props.put(GlobalConfigHolder.CFG_MAX_BAN_TIME_SEC, String.valueOf(u.getMaxBanTimeSeconds().longValue()));
         }
     }
 
+    private static String joinList(List<String> v) {
+        return v == null ? "" : String.join(",", v);
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Jail writes
+    // -------------------------------------------------------------------------------------------
+
     public boolean saveJail(String name, Boolean enabled, Integer maxRetry, Integer findTimeSeconds, Integer banTimeSeconds) {
-        if (StringUtils.isBlank(name) || isUnsafeJailName(name)) {
+        if (StringUtils.isBlank(name) || JailConfigTracker.isUnsafeJailName(name)) {
+            return false;
+        }
+        if (configurationAdmin == null) {
+            LOGGER.error("BFLP: ConfigurationAdmin unavailable; cannot persist jail '{}'", name);
             return false;
         }
         try {
-            jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                getOrCreateSettingsNode(session);
-                JCRNodeWrapper jails = session.getNode(JAILS_NODE_PATH);
-                JCRNodeWrapper jail = jails.hasNode(name) ? jails.getNode(name) : jails.addNode(name, NT_JAIL);
-                if (enabled != null) {
-                    jail.setProperty(PROP_JAIL_ENABLED, enabled);
-                }
-                if (maxRetry != null && maxRetry > 0) {
-                    jail.setProperty(PROP_JAIL_MAX_RETRY, maxRetry.longValue());
-                }
-                if (findTimeSeconds != null && findTimeSeconds > 0) {
-                    jail.setProperty(PROP_JAIL_FIND_TIME, findTimeSeconds.longValue());
-                }
-                if (banTimeSeconds != null && banTimeSeconds > 0) {
-                    jail.setProperty(PROP_JAIL_BAN_TIME, banTimeSeconds.longValue());
-                }
-                session.save();
-                return null;
-            });
-            invalidate();
+            Configuration cfg = findOrCreateJailConfig(name);
+            Dictionary<String, Object> props = cfg.getProperties();
+            if (props == null) {
+                props = new Hashtable<>();
+            }
+            props.put(JailConfigTracker.CFG_NAME, name);
+            if (enabled != null) {
+                props.put(JailConfigTracker.CFG_ENABLED, String.valueOf(enabled));
+            } else if (props.get(JailConfigTracker.CFG_ENABLED) == null) {
+                props.put(JailConfigTracker.CFG_ENABLED, "true");
+            }
+            if (maxRetry != null && maxRetry > 0) {
+                props.put(JailConfigTracker.CFG_MAX_RETRY, String.valueOf(maxRetry));
+            }
+            if (findTimeSeconds != null && findTimeSeconds > 0) {
+                props.put(JailConfigTracker.CFG_FIND_TIME, String.valueOf(findTimeSeconds));
+            }
+            if (banTimeSeconds != null && banTimeSeconds > 0) {
+                props.put(JailConfigTracker.CFG_BAN_TIME, String.valueOf(banTimeSeconds));
+            }
+            cfg.update(props);
             return true;
-        } catch (RepositoryException e) {
-            LOGGER.error("BFLP: error saving jail {}", sanitize(name), e);
+        } catch (IOException | InvalidSyntaxException e) {
+            LOGGER.error("BFLP: error saving jail '{}'", sanitize(name), e);
             return false;
         }
     }
 
     public boolean deleteJail(String name) {
-        if (StringUtils.isBlank(name) || isUnsafeJailName(name)) {
+        if (StringUtils.isBlank(name) || JailConfigTracker.isUnsafeJailName(name)) {
+            return false;
+        }
+        if (configurationAdmin == null) {
             return false;
         }
         try {
-            jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                if (session.nodeExists(JAILS_NODE_PATH + "/" + name)) {
-                    session.getNode(JAILS_NODE_PATH + "/" + name).remove();
-                    session.save();
-                }
-                return null;
-            });
-            invalidate();
+            Configuration cfg = findExistingJailConfig(name);
+            if (cfg != null) {
+                cfg.delete();
+            }
             return true;
-        } catch (RepositoryException e) {
-            LOGGER.error("BFLP: error deleting jail {}", sanitize(name), e);
+        } catch (IOException | InvalidSyntaxException e) {
+            LOGGER.error("BFLP: error deleting jail '{}'", sanitize(name), e);
             return false;
         }
     }
 
-    private void bootstrap() throws RepositoryException {
-        jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-            getOrCreateSettingsNode(session);
-            // make sure default jail exists
-            if (session.nodeExists(JAILS_NODE_PATH) && !session.nodeExists(JAILS_NODE_PATH + "/" + DEFAULT_JAIL_LOGIN)) {
-                JCRNodeWrapper jails = session.getNode(JAILS_NODE_PATH);
-                JCRNodeWrapper jail = jails.addNode(DEFAULT_JAIL_LOGIN, NT_JAIL);
-                jail.setProperty(PROP_JAIL_ENABLED, true);
-                jail.setProperty(PROP_JAIL_MAX_RETRY, DEFAULT_MAX_RETRY);
-                jail.setProperty(PROP_JAIL_FIND_TIME, DEFAULT_FIND_TIME_SEC);
-                jail.setProperty(PROP_JAIL_BAN_TIME, DEFAULT_BAN_TIME_SEC);
-                session.save();
-            }
-            return null;
-        });
+    private Configuration findOrCreateJailConfig(String name) throws IOException, InvalidSyntaxException {
+        Configuration existing = findExistingJailConfig(name);
+        if (existing != null) {
+            return existing;
+        }
+        return configurationAdmin.createFactoryConfiguration(JailConfigTracker.FACTORY_PID, "?");
     }
 
+    private Configuration findExistingJailConfig(String name) throws IOException, InvalidSyntaxException {
+        String filter = "(&(service.factoryPid=" + JailConfigTracker.FACTORY_PID + ")(" + JailConfigTracker.CFG_NAME + "=" + escapeFilter(name) + "))";
+        Configuration[] found = configurationAdmin.listConfigurations(filter);
+        if (found != null && found.length > 0) {
+            return found[0];
+        }
+        return null;
+    }
+
+    private static String escapeFilter(String s) {
+        return s.replace("\\", "\\\\").replace("*", "\\*").replace("(", "\\(").replace(")", "\\)");
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // JCR bootstrap for ban + audit child containers (still JCR-backed runtime state).
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * Ensures the {@code /settings/bruteforceloginprotection} parent node exists so that the
+     * autocreated {@code bans} and {@code auditLog} child containers are available for
+     * {@code BruteForceTracker} and {@link AuditLogger}. The global settings properties on this
+     * node are no longer read — they live in OSGi config now — but the node itself is still the
+     * JCR anchor for ban + audit children defined in the CND.
+     */
     public JCRNodeWrapper getOrCreateSettingsNode(JCRSessionWrapper session) throws RepositoryException {
         if (session.nodeExists(NODE_PATH)) {
             return session.getNode(NODE_PATH);
         }
         JCRNodeWrapper settingsRoot = session.getNode(NODE_SETTINGS_PATH);
-        JCRNodeWrapper node = settingsRoot.addNode(NODE_NAME, NT_SETTINGS);
-        node.setProperty(PROP_WHITELIST_IPS, DEFAULT_WHITELIST);
-        node.setProperty(PROP_ACTIVATED, false);
-        return node;
+        return settingsRoot.addNode(NODE_NAME, NT_SETTINGS);
     }
 
     public JCRTemplate getJcrTemplate() {
         return jcrTemplate;
-    }
-
-    private static GlobalSettings defaults() {
-        return GlobalSettings.builder()
-                .activated(false)
-                .whitelistIps(DEFAULT_WHITELIST)
-                .ignorePatterns(Collections.emptyList())
-                .trustProxyHeader(false)
-                .emailEnabled(false)
-                .auditLogMaxEntries(DEFAULT_AUDIT_LOG_MAX)
-                .recidiveFactor(DEFAULT_RECIDIVE_FACTOR)
-                .maxBanTimeSec(DEFAULT_MAX_BAN_TIME_SEC)
-                .build();
-    }
-
-    private static boolean boolProp(JCRNodeWrapper n, String name, boolean def) throws RepositoryException {
-        return n.hasProperty(name) ? n.getProperty(name).getBoolean() : def;
-    }
-
-    private static long longProp(JCRNodeWrapper n, String name, long def) throws RepositoryException {
-        return n.hasProperty(name) ? n.getProperty(name).getLong() : def;
-    }
-
-    private static double doubleProp(JCRNodeWrapper n, String name, double def) throws RepositoryException {
-        return n.hasProperty(name) ? n.getProperty(name).getDouble() : def;
-    }
-
-    private static String stringProp(JCRNodeWrapper n, String name, String def) throws RepositoryException {
-        return n.hasProperty(name) ? n.getProperty(name).getString() : def;
-    }
-
-    private static List<String> stringArrayProp(JCRNodeWrapper n, String name) throws RepositoryException {
-        if (!n.hasProperty(name)) {
-            return Collections.emptyList();
-        }
-        Value[] values = n.getProperty(name).getValues();
-        List<String> out = new ArrayList<>(values.length);
-        for (Value v : values) {
-            String s = v.getString();
-            if (StringUtils.isNotBlank(s)) {
-                out.add(s);
-            }
-        }
-        return out;
-    }
-
-    static boolean isUnsafeJailName(String name) {
-        return name.contains("/") || name.contains("\\") || name.contains("..") || name.contains(":");
     }
 
     private static String sanitize(String s) {
