@@ -23,6 +23,7 @@
     <jahia-module-type>system</jahia-module-type>
     <jahia-deploy-on-site>system</jahia-deploy-on-site>
     <jahia-depends>default,graphql-dxm-provider,serverSettings</jahia-depends>
+    <import-package>com.hazelcast.core</import-package>
   </properties>
   <dependencies>
     <dependency>
@@ -146,11 +147,11 @@
             <Import-Package>
               graphql.annotations.annotationTypes;version="[7.2,99)",
               graphql.schema;version="[13.0,99)",
-              com.hazelcast.core,
-              com.hazelcast.config,
-              com.hazelcast.nio,
-              com.hazelcast.nio.serialization,
-              com.hazelcast.util,
+              com.hazelcast.core;version="[3.0,5)",
+              com.hazelcast.config;version="[3.0,5)",
+              com.hazelcast.nio;version="[3.0,5)",
+              com.hazelcast.nio.serialization;version="[3.0,5)",
+              com.hazelcast.util;version="[3.0,5)",
               org.apache.karaf.cellar.core,
               org.apache.karaf.cellar.core.discovery,
               org.apache.karaf.cellar.core.utils,

@@ -13,6 +13,21 @@ Detects and blocks brute-force login attempts against a Jahia server, in the spi
 - **Audit log** — every ban, unban, and config change is recorded and visible from the UI.
 - **React admin UI** with tabs for General settings, Jails, Bans, Audit log, and Integrations.
 
+## Prerequisites
+
+**Jahia cluster mode must be enabled.** The module depends on Hazelcast (`com.hazelcast.*`) at the OSGi level for distributed state. Those packages are only exported by Jahia when clustering is active, so the bundle will fail to resolve in standalone mode with:
+
+```
+Unable to resolve brute-force-login-protection: missing requirement osgi.wiring.package=com.hazelcast.core
+```
+
+Enable cluster mode in one of these ways before deploying:
+
+- **Tarball/installer:** set `cluster.activated=true` in `digital-factory-config/jahia/jahia.node.properties` and restart.
+- **Docker image:** set the environment variable `CLUSTER_ENABLED=true`.
+
+A single-node "cluster of one" is fine for dev/test — the Hazelcast instance simply won't have peers.
+
 ## Installation
 
 - In Jahia, go to **Administration → Server settings → System components → Modules**

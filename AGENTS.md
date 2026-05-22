@@ -149,6 +149,7 @@ yarn report:merge && yarn report:html   # merge mochawesome JSON → HTML report
 
 ## Gotchas
 
+- **Requires Jahia cluster mode.** Hazelcast (`com.hazelcast.*`) is only exported by Jahia when clustering is active. Without it the bundle fails to resolve at install time with `missing requirement osgi.wiring.package=com.hazelcast.core`. Enable via `cluster.activated=true` in `jahia.node.properties` (tarball) or `CLUSTER_ENABLED=true` (Docker). A "cluster of one" is fine for dev/test.
 - **Breaking change from v2.x.** Both the JCR schema (new node types, no `nb_failed_login_max` / `time_to_idle`) and the GraphQL schema are incompatible. No automatic migration — v2 settings must be re-entered.
 - **Hazelcast port collision.** The module binds at `bindPort + 2`. If another Jahia module (e.g. `distributed-sessions`) already claims that offset, the cluster fails to form — override `cluster.hazelcastbflp.bindPort` explicitly in `jahia.properties`.
 - **`bantime` vs `findTime`.** `find_time_seconds` is the sliding window size used to *count* failures, `ban_time_seconds` is how long a ban lasts. They are independent — a long ban time with a short find-time is fine.
