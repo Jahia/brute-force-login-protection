@@ -80,7 +80,21 @@ public class AuditLogger {
     }
 
     private static JCRNodeWrapper ensureFolder(JCRNodeWrapper parent, String name) throws RepositoryException {
-        return parent.hasNode(name) ? parent.getNode(name) : parent.addNode(name, "jnt:contentFolder");
+        // Buckets use the audit-log container type so the recursive wildcard
+        // `+ * (jnt:bruteForceLoginProtectionAuditEntry)` allows AuditEntry children at every
+        // level. jnt:contentFolder cannot host AuditEntry directly because jnt:content does not
+        // extend nt:hierarchyNode (Jackrabbit rejects with "No child node definition").
+        if (parent.hasNode(name)) {
+            JCRNodeWrapper existing = parent.getNode(name);
+            if (existing.isNodeType(NT_AUDIT_CONTAINER)) {
+                return existing;
+            }
+            // Upgrade path: a previous version of this module created bucket folders as
+            // jnt:contentFolder, which silently rejected AuditEntry children. Those folders are
+            // empty (no entry ever wrote into them), so it's safe to drop and recreate.
+            existing.remove();
+        }
+        return parent.addNode(name, NT_AUDIT_CONTAINER);
     }
 
     public List<AuditEntry> list(int limit) {
