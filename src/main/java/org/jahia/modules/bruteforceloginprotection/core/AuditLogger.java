@@ -73,12 +73,30 @@ public class AuditLogger {
     }
 
     private static List<AuditEntry> readAllEntries(JCRNodeWrapper container) throws RepositoryException {
-        List<AuditEntry> out = new ArrayList<>();
-        NodeIterator it = container.getNodes();
-        while (it.hasNext()) {
-            out.add(toEntry(it.nextNode()));
+        List<Node> nodes = new ArrayList<>();
+        collectEntryNodes(container, nodes);
+        List<AuditEntry> out = new ArrayList<>(nodes.size());
+        for (Node n : nodes) {
+            out.add(toEntry(n));
         }
         return out;
+    }
+
+    /**
+     * Walks the audit container recursively, collecting nodes that represent audit entries
+     * (identified by the presence of the timestamp property). Intermediate {@code yyyy/MM/dd}
+     * folders introduced by {@code jmix:autoSplitFolder} are traversed transparently.
+     */
+    private static void collectEntryNodes(Node parent, List<Node> out) throws RepositoryException {
+        NodeIterator it = parent.getNodes();
+        while (it.hasNext()) {
+            Node child = it.nextNode();
+            if (child.hasProperty(PROP_AUDIT_TIMESTAMP)) {
+                out.add(child);
+            } else {
+                collectEntryNodes(child, out);
+            }
+        }
     }
 
     private static AuditEntry toEntry(Node n) throws RepositoryException {
@@ -125,16 +143,12 @@ public class AuditLogger {
         if (max <= 0) {
             return;
         }
-        long count = container.getNodes().getSize();
-        if (count <= max) {
+        List<Node> nodes = new ArrayList<>();
+        collectEntryNodes(container, nodes);
+        if (nodes.size() <= max) {
             return;
         }
-        long toRemove = count - max;
-        List<Node> nodes = new ArrayList<>();
-        NodeIterator it = container.getNodes();
-        while (it.hasNext()) {
-            nodes.add(it.nextNode());
-        }
+        long toRemove = nodes.size() - max;
         nodes.sort((a, b) -> {
             try {
                 long ta = a.hasProperty(PROP_AUDIT_TIMESTAMP) ? a.getProperty(PROP_AUDIT_TIMESTAMP).getLong() : 0L;

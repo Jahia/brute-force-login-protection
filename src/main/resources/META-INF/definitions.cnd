@@ -20,7 +20,9 @@
 [jnt:bruteForceLoginProtectionAuditLog] > jnt:contentFolder
  + * (jnt:bruteForceLoginProtectionAuditEntry) = jnt:bruteForceLoginProtectionAuditEntry
 
-[jnt:bruteForceLoginProtectionAuditEntry] > jnt:content
+[jnt:bruteForceLoginProtectionAuditEntry] > jnt:content, jmix:autoSplitFolder
+ - j:splitConfig (string) = 'date,property,jcr:created,yyyy/MM/dd' mandatory autocreated protected
+ - j:splitNodeType (string) = 'jnt:contentFolder' mandatory autocreated protected
  - timestamp (long) mandatory
  - event (string) mandatory
  - ip (string)
