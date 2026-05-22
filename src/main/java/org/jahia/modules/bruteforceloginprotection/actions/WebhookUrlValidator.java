@@ -2,7 +2,6 @@ package org.jahia.modules.bruteforceloginprotection.actions;
 
 import org.apache.commons.lang.StringUtils;
 
-import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
