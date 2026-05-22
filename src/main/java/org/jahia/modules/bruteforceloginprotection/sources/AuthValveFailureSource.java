@@ -41,6 +41,8 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
     private static final String BASIC_AUTH_SOURCE = "basic-auth-valve";
     private static final String BASIC_PREFIX = "Basic ";
+    private static final String APITOKEN_SOURCE = "api-token-valve";
+    private static final String APITOKEN_PREFIX = "APIToken ";
 
     private final AtomicBoolean emptyTrustedProxyWarningEmitted = new AtomicBoolean(false);
 
@@ -104,8 +106,9 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             return;
         }
 
-        String basicAuthHeader = request.getHeader("Authorization");
-        boolean hadBasicHeader = basicAuthHeader != null && basicAuthHeader.startsWith(BASIC_PREFIX);
+        String authHeader = request.getHeader("Authorization");
+        boolean hadBasicHeader = authHeader != null && authHeader.startsWith(BASIC_PREFIX);
+        boolean hadApiTokenHeader = authHeader != null && authHeader.startsWith(APITOKEN_PREFIX);
 
         valveContext.invokeNext(context);
 
@@ -129,7 +132,17 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         if (hadBasicHeader && remoteAddress != null && !isAuthenticated(authContext)) {
             Map<String, String> extras = new HashMap<>();
             extras.put("authScheme", "basic");
-            recordFailure(remoteAddress, BASIC_AUTH_SOURCE, extractBasicUsername(basicAuthHeader), request, extras);
+            recordFailure(remoteAddress, BASIC_AUTH_SOURCE, extractBasicUsername(authHeader), request, extras);
+            return;
+        }
+
+        // TokenAuthValve (personal-api-tokens module) likewise sets no VALVE_RESULT and fires no
+        // login event: an invalid APIToken just leaves currentUser null/guest. The token itself is
+        // a bearer secret, so we deliberately do not record it as a username.
+        if (hadApiTokenHeader && remoteAddress != null && !isAuthenticated(authContext)) {
+            Map<String, String> extras = new HashMap<>();
+            extras.put("authScheme", "apitoken");
+            recordFailure(remoteAddress, APITOKEN_SOURCE, null, request, extras);
         }
     }
 

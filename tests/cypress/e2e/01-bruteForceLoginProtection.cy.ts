@@ -342,6 +342,82 @@ describe('Brute Force Login Protection', () => {
         cy.wait(20000);
     });
 
+    it('blocks Personal API token auth from an IP after reaching the max failed attempts', () => {
+        cy.login();
+
+        cy.apollo({mutation: flush});
+
+        cy.apollo({
+            mutation: saveGlobalSettings,
+            variables: {
+                activated: true,
+                whitelistIps: '',
+                recidiveFactor: 1.0,
+                maxBanTimeSeconds: 60
+            }
+        });
+        cy.apollo({
+            mutation: saveJail,
+            variables: {
+                name: 'login',
+                enabled: true,
+                maxRetry: 2,
+                findTimeSeconds: 60,
+                banTimeSeconds: 15
+            }
+        });
+
+        waitForConfigReady('login');
+
+        cy.logout();
+        cy.clearCookies();
+
+        // TokenAuthValve listens on /modules/graphql + /modules/api/* by default; an invalid
+        // token silently leaves currentUser=guest, so BFLP detects it post-invokeNext.
+        const tokenPath = '/modules/graphql';
+        const badToken = 'APIToken not-a-real-token-xxxxxxxxxxxxxxxxxxxx';
+
+        for (let i = 0; i < 2; i++) {
+            cy.request({
+                method: 'POST',
+                url: tokenPath,
+                headers: {Authorization: badToken, 'Content-Type': 'application/json'},
+                body: {query: '{ __typename }'},
+                followRedirect: false,
+                failOnStatusCode: false
+            });
+        }
+
+        // Third attempt with the same (still-invalid) token must be rejected by the ban gate,
+        // not by token verification — but either way the request stays unauthenticated.
+        cy.request({
+            method: 'POST',
+            url: tokenPath,
+            headers: {Authorization: badToken, 'Content-Type': 'application/json'},
+            body: {query: '{ __typename }'},
+            followRedirect: false,
+            failOnStatusCode: false
+        });
+
+        // Wait out the ban window before logging in to read the audit log — the test runner's
+        // own IP is the one we just banned.
+        cy.logout();
+        cy.clearCookies();
+        cy.wait(20000);
+        cy.login();
+        cy.apollo({query: getAuditLog, variables: {limit: 50}})
+            .its('data.bruteForceLoginProtectionAuditLog')
+            .should((entries: Array<{event: string; source: string; ip: string}>) => {
+                const bans = entries.filter(e => e.event === 'BAN');
+                expect(bans.length, 'at least one BAN event recorded').to.be.greaterThan(0);
+                const apiToken = entries.filter(e => e.source === 'api-token-valve');
+                expect(apiToken.length, 'at least one audit entry sourced from api-token-valve').to.be.greaterThan(0);
+            });
+
+        // eslint-disable-next-line cypress/no-unnecessary-waiting
+        cy.wait(20000);
+    });
+
     /* ---------------- UI smoke tests (defensive, text-based selectors) ---------------- */
 
     it('shows the admin panel with the main tabs', () => {
