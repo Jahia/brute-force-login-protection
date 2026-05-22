@@ -270,6 +270,74 @@ describe('Brute Force Login Protection', () => {
         cy.wait('@page').its('response.statusCode').should('equal', 200);
     });
 
+    it('blocks HTTP Basic auth from an IP after reaching the max failed attempts', () => {
+        cy.login();
+
+        cy.apollo({mutation: flush});
+
+        cy.apollo({
+            mutation: saveGlobalSettings,
+            variables: {
+                activated: true,
+                whitelistIps: '',
+                recidiveFactor: 1.0,
+                maxBanTimeSeconds: 60
+            }
+        });
+        cy.apollo({
+            mutation: saveJail,
+            variables: {
+                name: 'login',
+                enabled: true,
+                maxRetry: 2,
+                findTimeSeconds: 60,
+                banTimeSeconds: 15
+            }
+        });
+
+        waitForConfigReady('login');
+
+        cy.logout();
+        cy.clearCookies();
+
+        const badAuth = 'Basic ' + btoa('root:bad_password');
+
+        for (let i = 0; i < 2; i++) {
+            cy.request({
+                method: 'GET',
+                url: adminPath,
+                headers: {Authorization: badAuth},
+                followRedirect: false,
+                failOnStatusCode: false
+            });
+        }
+
+        // Even valid Basic credentials must now fail — the IP is banned
+        const goodAuth = 'Basic ' + btoa('root:' + (Cypress.env('SUPER_USER_PASSWORD') || 'root1234'));
+        cy.request({
+            method: 'GET',
+            url: adminPath,
+            headers: {Authorization: goodAuth},
+            followRedirect: false,
+            failOnStatusCode: false
+        }).its('status').should('equal', 401);
+
+        // Audit log captured the BAN, and at least one failure carries source=basic-auth-valve
+        cy.login();
+        cy.apollo({query: getAuditLog, variables: {limit: 50}})
+            .its('data.bruteForceLoginProtectionAuditLog')
+            .should((entries: Array<{event: string; source: string; ip: string}>) => {
+                const bans = entries.filter(e => e.event === 'BAN');
+                expect(bans.length, 'at least one BAN event recorded').to.be.greaterThan(0);
+                const basic = entries.filter(e => e.source === 'basic-auth-valve');
+                expect(basic.length, 'at least one audit entry sourced from basic-auth-valve').to.be.greaterThan(0);
+            });
+
+        // Wait out the (short) ban window so subsequent tests can re-authenticate
+        // eslint-disable-next-line cypress/no-unnecessary-waiting
+        cy.wait(20000);
+    });
+
     /* ---------------- UI smoke tests (defensive, text-based selectors) ---------------- */
 
     it('shows the admin panel with the main tabs', () => {
