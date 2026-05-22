@@ -24,7 +24,7 @@ const ClusterStatusBar = () => {
     const {t} = useTranslation('brute-force-login-protection');
     const {data} = useQuery(GET_CLUSTER_STATUS, {fetchPolicy: 'network-only'});
     const status = data?.bruteForceLoginProtectionClusterStatus;
-    const healthy = status && status.hazelcastRunning && status.nodeCount > 1;
+    const healthy = status && status.hazelcastRunning && status.nodeCount > 0;
     const text = healthy ?
         t('cluster.healthy', {count: status.nodeCount}) :
         t('cluster.degraded');
