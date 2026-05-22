@@ -31,7 +31,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.UserPrincipal;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -251,9 +255,14 @@ public class HazelcastInstanceManager implements Runnable {
                 try {
                     Files.setPosixFilePermissions(secretFile,
                             PosixFilePermissions.fromString("rw-------"));
-                } catch (UnsupportedOperationException | IOException permEx) {
-                    // best-effort on non-POSIX (e.g. Windows)
-                    logger.debug("BFLP: cannot apply POSIX permissions on {}: {}", secretFile, permEx.getMessage());
+                } catch (UnsupportedOperationException permEx) {
+                    // Non-POSIX FS (typically Windows) — fall back to ACL granting only the owner.
+                    if (!tryRestrictWithAcl(secretFile)) {
+                        logger.warn("BFLP: could not lock down cluster secret file {} via POSIX or ACL; please restrict it manually",
+                                secretFile);
+                    }
+                } catch (IOException permEx) {
+                    logger.warn("BFLP: cannot apply POSIX permissions on {}: {}", secretFile, permEx.getMessage());
                 }
                 logger.info("BFLP: generated per-install Hazelcast cluster secret at {}", secretFile);
             } catch (IOException e) {
@@ -261,6 +270,40 @@ public class HazelcastInstanceManager implements Runnable {
             }
         }
         System.setProperty(CLUSTER_PASSWORD_PROPERTY, password);
+    }
+
+    /**
+     * Best-effort Windows/ACL fallback when {@link Files#setPosixFilePermissions} is not
+     * supported. Grants the file owner full access via an explicit ACL and removes all other
+     * entries. Returns {@code false} on any failure so the caller can log a WARN.
+     */
+    private static boolean tryRestrictWithAcl(Path file) {
+        try {
+            AclFileAttributeView view = Files.getFileAttributeView(file, AclFileAttributeView.class);
+            if (view == null) {
+                return false;
+            }
+            UserPrincipal owner = Files.getOwner(file);
+            AclEntry entry = AclEntry.newBuilder()
+                    .setType(java.nio.file.attribute.AclEntryType.ALLOW)
+                    .setPrincipal(owner)
+                    .setPermissions(
+                            AclEntryPermission.READ_DATA,
+                            AclEntryPermission.WRITE_DATA,
+                            AclEntryPermission.APPEND_DATA,
+                            AclEntryPermission.READ_ATTRIBUTES,
+                            AclEntryPermission.WRITE_ATTRIBUTES,
+                            AclEntryPermission.READ_ACL,
+                            AclEntryPermission.WRITE_ACL,
+                            AclEntryPermission.DELETE,
+                            AclEntryPermission.SYNCHRONIZE)
+                    .build();
+            view.setAcl(java.util.Collections.singletonList(entry));
+            return true;
+        } catch (Exception e) {
+            logger.debug("BFLP: ACL fallback failed for {}: {}", file, e.getMessage());
+            return false;
+        }
     }
 
     /**

@@ -40,7 +40,7 @@ public class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
         s.add("java.lang.Byte");
         s.add("java.lang.Boolean");
         s.add("java.lang.Character");
-        s.add("java.lang.Enum");
+        // enum constants resolve to their concrete subclass; the module-prefix check covers them
         // Collections
         s.add("java.util.ArrayList");
         s.add("java.util.LinkedList");

@@ -2,6 +2,8 @@ package org.jahia.modules.bruteforceloginprotection.actions;
 
 import org.apache.commons.lang.StringUtils;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -79,12 +81,33 @@ public final class WebhookUrlValidator {
         if (AWS_METADATA_IPV4.equals(addr.getHostAddress())) {
             return true;
         }
-        // IPv6 Unique Local Address (fc00::/7) — first byte 0xfc or 0xfd.
         byte[] bytes = addr.getAddress();
-        if (bytes.length == 16) {
+        if (addr instanceof Inet6Address && bytes.length == 16) {
+            // IPv6 Unique Local Address (fc00::/7) — first byte 0xfc or 0xfd.
             int first = bytes[0] & 0xFF;
             if ((first & 0xFE) == 0xFC) {
                 return true;
+            }
+            // IPv6 link-local fe80::/10
+            if ((first & 0xFF) == 0xFE && (bytes[1] & 0xC0) == 0x80) {
+                return true;
+            }
+            // IPv4-mapped IPv6 (::ffff:x.x.x.x): first 10 bytes zero, bytes[10]=bytes[11]=0xff
+            boolean mappedPrefix = true;
+            for (int i = 0; i < 10; i++) {
+                if (bytes[i] != 0) { mappedPrefix = false; break; }
+            }
+            if (mappedPrefix && (bytes[10] & 0xFF) == 0xFF && (bytes[11] & 0xFF) == 0xFF) {
+                try {
+                    byte[] v4 = new byte[]{bytes[12], bytes[13], bytes[14], bytes[15]};
+                    InetAddress mapped = Inet4Address.getByAddress(v4);
+                    if (isForbidden(mapped)) {
+                        return true;
+                    }
+                } catch (UnknownHostException e) {
+                    // 4-byte address never throws; defensive only
+                    return true;
+                }
             }
         }
         return false;

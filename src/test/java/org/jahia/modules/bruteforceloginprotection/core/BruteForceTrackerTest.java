@@ -74,6 +74,24 @@ public class BruteForceTrackerTest {
         when(bansMap.remove(anyString())).thenAnswer(inv -> bansStore.remove((String) inv.getArgument(0)));
         when(bansMap.put(anyString(), any(BannedIp.class), anyLong(), any(TimeUnit.class)))
                 .thenAnswer(inv -> bansStore.put(inv.getArgument(0), inv.getArgument(1)));
+        when(bansMap.putIfAbsent(anyString(), any(BannedIp.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    String k = inv.getArgument(0);
+                    BannedIp v = inv.getArgument(1);
+                    return bansStore.putIfAbsent(k, v);
+                });
+        when(bansMap.replace(anyString(), any(BannedIp.class), any(BannedIp.class)))
+                .thenAnswer(inv -> {
+                    String k = inv.getArgument(0);
+                    BannedIp oldV = inv.getArgument(1);
+                    BannedIp newV = inv.getArgument(2);
+                    BannedIp cur = bansStore.get(k);
+                    if (cur == oldV || (cur != null && cur.equals(oldV))) {
+                        bansStore.put(k, newV);
+                        return true;
+                    }
+                    return false;
+                });
 
         // JCR template: just execute the callback against a no-op-ish path or short-circuit
         // For mirrorBanToJcr & readBanCountFromJcr, return 0 / no-op by NOT executing the callback.

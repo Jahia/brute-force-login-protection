@@ -16,11 +16,25 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component(immediate = true, service = BanAction.class)
 public class WebhookBanAction implements BanAction {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WebhookBanAction.class);
+    private static final long OVERALL_DEADLINE_SEC = 10L;
+    private static final int EXECUTOR_POOL_SIZE = 2;
+    private static final AtomicInteger WEBHOOK_THREAD_COUNTER = new AtomicInteger();
+    private static final ExecutorService WEBHOOK_EXECUTOR = Executors.newFixedThreadPool(EXECUTOR_POOL_SIZE, r -> {
+        Thread t = new Thread(r, "bflp-webhook-" + WEBHOOK_THREAD_COUNTER.incrementAndGet());
+        t.setDaemon(true);
+        return t;
+    });
 
     @Reference
     private SettingsService settingsService;
@@ -58,32 +72,52 @@ public class WebhookBanAction implements BanAction {
             return;
         }
         String body = buildJson(context, event);
-        try {
-            URL u = new URL(url);
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            String secret = settings.getWebhookSecret();
-            if (StringUtils.isNotBlank(secret)) {
-                String sig = hmacSha256Hex(body, secret);
-                if (sig != null) {
-                    conn.setRequestProperty("X-BFLP-Signature", "sha256=" + sig);
+        String secret = settings.getWebhookSecret();
+        final HttpURLConnection[] connHolder = new HttpURLConnection[1];
+        Future<Void> future = WEBHOOK_EXECUTOR.submit(() -> {
+            try {
+                URL u = new URL(url);
+                HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+                connHolder[0] = conn;
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                if (StringUtils.isNotBlank(secret)) {
+                    String sig = hmacSha256Hex(body, secret);
+                    if (sig != null) {
+                        conn.setRequestProperty("X-BFLP-Signature", "sha256=" + sig);
+                    }
                 }
+                conn.setDoOutput(true);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(body.getBytes(StandardCharsets.UTF_8));
+                }
+                int code = conn.getResponseCode();
+                if (code >= 400) {
+                    LOGGER.warn("BFLP: webhook returned status {}", code);
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                LOGGER.warn("BFLP: webhook delivery failed: {}", e.getMessage());
             }
-            conn.setDoOutput(true);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(body.getBytes(StandardCharsets.UTF_8));
+            return null;
+        });
+        try {
+            future.get(OVERALL_DEADLINE_SEC, TimeUnit.SECONDS);
+        } catch (TimeoutException te) {
+            future.cancel(true);
+            HttpURLConnection conn = connHolder[0];
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) { /* best-effort */ }
             }
-            int code = conn.getResponseCode();
-            if (code >= 400) {
-                LOGGER.warn("BFLP: webhook returned status {}", code);
-            }
-            conn.disconnect();
-        } catch (Exception e) {
-            LOGGER.warn("BFLP: webhook delivery failed: {}", e.getMessage());
+            LOGGER.warn("BFLP: webhook overall deadline exceeded ({}s), aborting", OVERALL_DEADLINE_SEC);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+        } catch (Exception ex) {
+            LOGGER.debug("BFLP: webhook task failed: {}", ex.getMessage());
         }
     }
 

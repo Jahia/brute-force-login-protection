@@ -59,7 +59,7 @@ public class EmailBanAction implements BanAction {
         }
         try {
             String recipient = stripHeaderInjection(StringUtils.defaultIfBlank(settings.getEmailRecipient(), mailService.defaultRecipient()));
-            String sender = mailService.defaultSender();
+            String sender = stripHeaderInjection(mailService.defaultSender());
             String subject = stripHeaderInjection(String.format("[BFLP] Login blocked for IP %s", sanitize(context.getIp())));
             String body = "The IP " + sanitize(context.getIp()) + " was banned by jail '" + sanitize(context.getJailName())
                     + "' (banCount=" + context.getBanCount()

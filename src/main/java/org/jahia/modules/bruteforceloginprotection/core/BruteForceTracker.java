@@ -136,21 +136,47 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
+    private static final int CAS_MAX_RETRIES = 5;
+
     private void doBan(HazelcastInstance hz, FailureEvent event, JailConfig jail, GlobalSettings settings, long now) {
         IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
-        BannedIp existing = bans.get(event.getIp());
-        int prevCount = 0;
-        if (existing == null) {
-            prevCount = readBanCountFromJcr(event.getIp());
-        } else {
-            prevCount = existing.getBanCount();
+        String ip = event.getIp();
+        BannedIp banned = null;
+        long banSec = 0L;
+        // CAS loop: atomically compute the next ban from the current map state so concurrent
+        // ban triggers on the same IP can't both observe banCount=N and both write N+1.
+        for (int attempt = 0; attempt < CAS_MAX_RETRIES; attempt++) {
+            BannedIp existing = bans.get(ip);
+            int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
+            banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
+                    settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
+            long bannedUntil = now + banSec * 1000L;
+            String reason = "Exceeded " + jail.getMaxRetry() + " failures in " + jail.getFindTimeSec() + "s window";
+            BannedIp candidate = new BannedIp(ip, jail.getName(), event.getSourceName(),
+                    now, bannedUntil, prevCount + 1, reason);
+            boolean stored;
+            if (existing == null) {
+                stored = (bans.putIfAbsent(ip, candidate, banSec, TimeUnit.SECONDS) == null);
+            } else {
+                stored = bans.replace(ip, existing, candidate);
+            }
+            if (stored) {
+                banned = candidate;
+                break;
+            }
         }
-        long banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(), settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
-        long bannedUntil = now + banSec * 1000L;
-        String reason = "Exceeded " + jail.getMaxRetry() + " failures in " + jail.getFindTimeSec() + "s window";
-        BannedIp banned = new BannedIp(event.getIp(), jail.getName(), event.getSourceName(),
-                now, bannedUntil, prevCount + 1, reason);
-        bans.put(event.getIp(), banned, banSec, TimeUnit.SECONDS);
+        if (banned == null) {
+            LOGGER.warn("BFLP: CAS exhaustion when updating ban for {} after {} retries; falling back to last-write-wins",
+                    AuditLogger.sanitize(ip), CAS_MAX_RETRIES);
+            BannedIp existing = bans.get(ip);
+            int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
+            banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
+                    settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
+            String reason = "Exceeded " + jail.getMaxRetry() + " failures in " + jail.getFindTimeSec() + "s window";
+            banned = new BannedIp(ip, jail.getName(), event.getSourceName(),
+                    now, now + banSec * 1000L, prevCount + 1, reason);
+            bans.put(ip, banned, banSec, TimeUnit.SECONDS);
+        }
         mirrorBanToJcr(banned);
 
         auditLogger.log(AuditLogger.EVENT_BAN, event.getIp(), jail.getName(), event.getSourceName(),
@@ -365,9 +391,13 @@ public class BruteForceTracker implements FailureRecorder {
                 long last = lastIgnorePatternTimeoutWarnMs.get();
                 if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
                         && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)) {
-                    LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; skipping",
+                    LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; treating as MATCHED to deny ReDoS bypass",
                             AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
                 }
+                // Fail closed: treat a timeout as a match so the failure is silently skipped
+                // (denies an attacker who supplies a catastrophic username from bypassing
+                // counter increments via a slow-regex pattern).
+                return true;
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 future.cancel(true);

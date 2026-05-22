@@ -7,6 +7,7 @@ import org.jahia.services.content.JCRCallback;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.JCRTemplate;
+import org.jahia.utils.EncryptionUtils;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
@@ -99,7 +100,7 @@ public class SettingsService {
                         boolean emailEnabled = boolProp(node, PROP_EMAIL_ENABLED, false);
                         String emailRecipient = stringProp(node, PROP_EMAIL_RECIPIENT, null);
                         String webhookUrl = stringProp(node, PROP_WEBHOOK_URL, null);
-                        String webhookSecret = stringProp(node, PROP_WEBHOOK_SECRET, null);
+                        String webhookSecret = decryptWebhookSecret(stringProp(node, PROP_WEBHOOK_SECRET, null));
                         int auditMax = (int) longProp(node, PROP_AUDIT_LOG_MAX, DEFAULT_AUDIT_LOG_MAX);
                         double recidive = doubleProp(node, PROP_RECIDIVE_FACTOR, DEFAULT_RECIDIVE_FACTOR);
                         long maxBan = longProp(node, PROP_MAX_BAN_TIME_SEC, DEFAULT_MAX_BAN_TIME_SEC);
@@ -226,7 +227,33 @@ public class SettingsService {
                 node.getProperty(PROP_WEBHOOK_SECRET).remove();
             }
         } else {
-            node.setProperty(PROP_WEBHOOK_SECRET, webhookSecret);
+            node.setProperty(PROP_WEBHOOK_SECRET, encryptWebhookSecret(webhookSecret));
+        }
+    }
+
+    private static final String ENC_PREFIX = "{enc}";
+
+    private static String encryptWebhookSecret(String plain) {
+        if (plain == null) {
+            return null;
+        }
+        try {
+            return ENC_PREFIX + EncryptionUtils.passwordBaseEncrypt(plain);
+        } catch (Exception e) {
+            LOGGER.warn("BFLP: failed to encrypt webhookSecret, storing plaintext fallback: {}", e.getMessage());
+            return plain;
+        }
+    }
+
+    static String decryptWebhookSecret(String stored) {
+        if (stored == null || !stored.startsWith(ENC_PREFIX)) {
+            return stored; // legacy plaintext or null — migration path
+        }
+        try {
+            return EncryptionUtils.passwordBaseDecrypt(stored.substring(ENC_PREFIX.length()));
+        } catch (Exception e) {
+            LOGGER.warn("BFLP: failed to decrypt webhookSecret: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -251,7 +278,7 @@ public class SettingsService {
     }
 
     public boolean saveJail(String name, Boolean enabled, Integer maxRetry, Integer findTimeSeconds, Integer banTimeSeconds) {
-        if (StringUtils.isBlank(name)) {
+        if (StringUtils.isBlank(name) || isUnsafeJailName(name)) {
             return false;
         }
         try {
@@ -283,7 +310,7 @@ public class SettingsService {
     }
 
     public boolean deleteJail(String name) {
-        if (StringUtils.isBlank(name)) {
+        if (StringUtils.isBlank(name) || isUnsafeJailName(name)) {
             return false;
         }
         try {
@@ -376,6 +403,10 @@ public class SettingsService {
             }
         }
         return out;
+    }
+
+    static boolean isUnsafeJailName(String name) {
+        return name.contains("/") || name.contains("\\") || name.contains("..") || name.contains(":");
     }
 
     private static String sanitize(String s) {
