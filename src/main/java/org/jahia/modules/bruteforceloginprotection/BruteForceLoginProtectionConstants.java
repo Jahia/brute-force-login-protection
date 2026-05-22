@@ -8,8 +8,6 @@ public final class BruteForceLoginProtectionConstants {
     public static final String NODE_SETTINGS_PATH = "/settings";
     public static final String NODE_NAME = "bruteforceloginprotection";
     public static final String NODE_PATH = NODE_SETTINGS_PATH + "/" + NODE_NAME;
-    public static final String JAILS_NODE_NAME = "jails";
-    public static final String JAILS_NODE_PATH = NODE_PATH + "/" + JAILS_NODE_NAME;
     public static final String BANS_NODE_NAME = "bans";
     public static final String BANS_NODE_PATH = NODE_PATH + "/" + BANS_NODE_NAME;
     public static final String AUDIT_NODE_NAME = "auditLog";
@@ -17,32 +15,10 @@ public final class BruteForceLoginProtectionConstants {
 
     // JCR node types
     public static final String NT_SETTINGS = "jnt:bruteForceLoginProtection";
-    public static final String NT_JAIL = "jnt:bruteForceLoginProtectionJail";
     public static final String NT_BAN = "jnt:bruteForceLoginProtectionBan";
     public static final String NT_AUDIT_ENTRY = "jnt:bruteForceLoginProtectionAuditEntry";
-    public static final String NT_JAILS_CONTAINER = "jnt:bruteForceLoginProtectionJails";
     public static final String NT_BANS_CONTAINER = "jnt:bruteForceLoginProtectionBans";
     public static final String NT_AUDIT_CONTAINER = "jnt:bruteForceLoginProtectionAuditLog";
-
-    // Global property names
-    public static final String PROP_ACTIVATED = "activated";
-    public static final String PROP_WHITELIST_IPS = "whitelist_ips";
-    public static final String PROP_IGNORE_PATTERNS = "ignore_patterns";
-    public static final String PROP_TRUST_PROXY_HEADER = "trust_x_forwarded_for";
-    public static final String PROP_TRUSTED_PROXY_CIDRS = "trusted_proxy_cidrs";
-    public static final String PROP_EMAIL_ENABLED = "email_enabled";
-    public static final String PROP_EMAIL_RECIPIENT = "email_recipient";
-    public static final String PROP_WEBHOOK_URL = "webhook_url";
-    public static final String PROP_WEBHOOK_SECRET = "webhook_secret";
-    public static final String PROP_AUDIT_LOG_MAX = "audit_log_max_entries";
-    public static final String PROP_RECIDIVE_FACTOR = "recidive_factor";
-    public static final String PROP_MAX_BAN_TIME_SEC = "max_ban_time_seconds";
-
-    // Per-jail property names
-    public static final String PROP_JAIL_ENABLED = "enabled";
-    public static final String PROP_JAIL_MAX_RETRY = "max_retry";
-    public static final String PROP_JAIL_FIND_TIME = "find_time_seconds";
-    public static final String PROP_JAIL_BAN_TIME = "ban_time_seconds";
 
     // Per-ban property names
     public static final String PROP_BAN_IP = "ip";
