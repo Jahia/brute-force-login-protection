@@ -112,8 +112,12 @@ public class WebhookBanAction implements BanAction {
         } catch (IllegalArgumentException ex) {
             return IntegrationTestResult.fail("URL rejected: " + ex.getMessage());
         }
-        String body = "{\"event\":\"test\",\"message\":\"BFLP test webhook\",\"timestamp\":"
-                + System.currentTimeMillis() + "}";
+        // Slack-compatible: include a top-level "text" field. Other consumers can keep using
+        // the structured fields; Slack rejects payloads without "text" with HTTP 400.
+        String body = "{\"event\":\"test\","
+                + "\"text\":\"BFLP test webhook\","
+                + "\"message\":\"BFLP test webhook\","
+                + "\"timestamp\":" + System.currentTimeMillis() + "}";
         String secret = settings.getWebhookSecret();
         HttpURLConnection conn = null;
         try {
@@ -179,9 +183,14 @@ public class WebhookBanAction implements BanAction {
     }
 
     private static String buildJson(BanContext ctx, String event) {
-        StringBuilder sb = new StringBuilder(256);
+        // Top-level "text" makes the payload Slack-compatible (Slack rejects payloads without
+        // it with HTTP 400). Other consumers can keep parsing the structured fields.
+        String text = "BFLP: IP " + ctx.getIp() + " " + event
+                + " (jail " + ctx.getJailName() + ", banCount " + ctx.getBanCount() + ")";
+        StringBuilder sb = new StringBuilder(320);
         sb.append("{");
         sb.append("\"event\":\"").append(jsonEscape(event)).append("\",");
+        sb.append("\"text\":\"").append(jsonEscape(text)).append("\",");
         sb.append("\"ip\":\"").append(jsonEscape(ctx.getIp())).append("\",");
         sb.append("\"jail\":\"").append(jsonEscape(ctx.getJailName())).append("\",");
         sb.append("\"source\":\"").append(jsonEscape(ctx.getSourceName())).append("\",");
