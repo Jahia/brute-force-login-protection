@@ -85,7 +85,7 @@ public class AuditLogger {
     /**
      * Walks the audit container recursively, collecting nodes that represent audit entries
      * (identified by the presence of the timestamp property). Intermediate {@code yyyy/MM/dd}
-     * folders introduced by {@code jmix:autoSplitFolder} are traversed transparently.
+     * folders introduced by {@code jmix:autoSplitFolders} are traversed transparently.
      */
     private static void collectEntryNodes(Node parent, List<Node> out) throws RepositoryException {
         NodeIterator it = parent.getNodes();
