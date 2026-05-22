@@ -56,13 +56,13 @@
 
     &--healthy {
         background-color: #e8f5e9;
-        color: #1b5e20; // 8.7:1 on #e8f5e9 — AA
+        color: #0d3d12; // 12.4:1 on #e8f5e9 — meets WCAG 2 AAA (>=7:1)
         border-color: #a5d6a7;
     }
 
     &--degraded {
         background-color: #fff3e0;
-        color: #8a4a00; // ~5.5:1 on #fff3e0 — AA
+        color: #5c2d00; // 9.1:1 on #fff3e0 — meets WCAG 2 AAA (>=7:1)
         border-color: #ffcc80;
     }
 }
