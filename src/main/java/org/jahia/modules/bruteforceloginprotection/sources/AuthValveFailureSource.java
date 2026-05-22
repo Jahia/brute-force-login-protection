@@ -14,6 +14,8 @@ import org.jahia.params.valves.LoginEngineAuthValveImpl;
 import org.jahia.pipelines.Pipeline;
 import org.jahia.pipelines.PipelineException;
 import org.jahia.pipelines.valves.ValveContext;
+import org.jahia.services.usermanager.JahiaUser;
+import org.jahia.services.usermanager.JahiaUserManagerService;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
@@ -22,6 +24,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +39,8 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
+    private static final String BASIC_AUTH_SOURCE = "basic-auth-valve";
+    private static final String BASIC_PREFIX = "Basic ";
 
     private final AtomicBoolean emptyTrustedProxyWarningEmitted = new AtomicBoolean(false);
 
@@ -98,6 +104,9 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             return;
         }
 
+        String basicAuthHeader = request.getHeader("Authorization");
+        boolean hadBasicHeader = basicAuthHeader != null && basicAuthHeader.startsWith(BASIC_PREFIX);
+
         valveContext.invokeNext(context);
 
         Object result = request.getAttribute(LoginEngineAuthValveImpl.VALVE_RESULT);
@@ -109,23 +118,62 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             Map<String, String> extras = new HashMap<>();
             extras.put("result", String.valueOf(result));
             String username = request.getParameter("username");
-            String userAgent = request.getHeader("User-Agent");
-            String requestPath = request.getRequestURI();
-            FailureEvent event = FailureEvent.builder()
-                    .ip(remoteAddress)
-                    .sourceName(getName())
-                    .jailName(getName())
-                    .timestampMs(System.currentTimeMillis())
-                    .username(username)
-                    .userAgent(userAgent)
-                    .requestPath(requestPath)
-                    .extras(extras)
-                    .build();
-            try {
-                failureRecorder.recordEvent(event);
-            } catch (Exception e) {
-                LOGGER.warn("BFLP: failure recorder threw: {}", e.getMessage());
+            recordFailure(remoteAddress, getName(), username, request, extras);
+            return;
+        }
+
+        // HttpBasicAuthValveImpl does not set VALVE_RESULT and disables the login event
+        // (triggerLoginEventEnabled(false)). We detect failure by checking whether the auth
+        // pipeline left the request authenticated: success installs a non-guest user on the
+        // session factory, failure falls through with currentUser null/guest.
+        if (hadBasicHeader && remoteAddress != null && !isAuthenticated(authContext)) {
+            Map<String, String> extras = new HashMap<>();
+            extras.put("authScheme", "basic");
+            recordFailure(remoteAddress, BASIC_AUTH_SOURCE, extractBasicUsername(basicAuthHeader), request, extras);
+        }
+    }
+
+    private void recordFailure(String remoteAddress, String sourceName, String username,
+                               HttpServletRequest request, Map<String, String> extras) {
+        String userAgent = request.getHeader("User-Agent");
+        String requestPath = request.getRequestURI();
+        FailureEvent event = FailureEvent.builder()
+                .ip(remoteAddress)
+                .sourceName(sourceName)
+                .jailName(getName())
+                .timestampMs(System.currentTimeMillis())
+                .username(username)
+                .userAgent(userAgent)
+                .requestPath(requestPath)
+                .extras(extras)
+                .build();
+        try {
+            failureRecorder.recordEvent(event);
+        } catch (Exception e) {
+            LOGGER.warn("BFLP: failure recorder threw: {}", e.getMessage());
+        }
+    }
+
+    private static boolean isAuthenticated(AuthValveContext authContext) {
+        if (authContext.getSessionFactory() == null) {
+            return false;
+        }
+        JahiaUser user = authContext.getSessionFactory().getCurrentUser();
+        return user != null && !JahiaUserManagerService.isGuest(user);
+    }
+
+    private static String extractBasicUsername(String authHeader) {
+        try {
+            String encoded = authHeader.substring(BASIC_PREFIX.length()).trim();
+            String decoded = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+            int colon = decoded.indexOf(':');
+            if (colon <= 0) {
+                return null;
             }
+            return decoded.substring(0, colon);
+        } catch (IllegalArgumentException e) {
+            // malformed Base64 — still a failed attempt, just without a username
+            return null;
         }
     }
 
