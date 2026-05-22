@@ -46,15 +46,26 @@ public class GlobalConfigHolder implements ManagedService {
     public static final String CFG_MAX_BAN_TIME_SEC = "max_ban_time_seconds";
 
     private final AtomicReference<GlobalSettings> current = new AtomicReference<>(defaults());
+    private volatile boolean updateReceived;
 
     @Override
     public void updated(Dictionary<String, ?> dictionary) throws ConfigurationException {
         if (dictionary == null) {
             current.set(defaults());
+            updateReceived = true;
             return;
         }
         current.set(fromDictionary(dictionary));
+        updateReceived = true;
         LOGGER.debug("BFLP: global settings reloaded from OSGi ConfigurationAdmin");
+    }
+
+    /** True once Felix has invoked {@link #updated} at least once — the in-memory snapshot
+     * reflects ConfigurationAdmin rather than the cold-start defaults. Used by the GraphQL
+     * readiness probe so tests can wait for a {@code saveGlobalSettings} mutation to round-trip
+     * through the OSGi event dispatch before exercising the ban path. */
+    public boolean isReady() {
+        return updateReceived;
     }
 
     public GlobalSettings getGlobalSettings() {

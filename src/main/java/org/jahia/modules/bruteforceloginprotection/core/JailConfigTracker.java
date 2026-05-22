@@ -93,6 +93,14 @@ public class JailConfigTracker implements ManagedServiceFactory {
         return Collections.unmodifiableMap(new HashMap<>(jails));
     }
 
+    /** True iff a {@code .cfg} for the given jail name has been registered via
+     * {@link #updated(String, Dictionary)} — i.e. {@link #getJail(String)} would return the
+     * persisted config rather than the synthetic default. Used by the GraphQL readiness probe
+     * so tests can wait until a {@code saveJail} mutation has actually landed in this tracker. */
+    public boolean hasJail(String name) {
+        return name != null && jails.containsKey(name);
+    }
+
     public JailConfig getJail(String name) {
         if (name == null) {
             return null;

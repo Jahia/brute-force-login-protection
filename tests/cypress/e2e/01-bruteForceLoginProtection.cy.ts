@@ -9,6 +9,7 @@ describe('Brute Force Login Protection', () => {
     const getBannedIps: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getBannedIps.graphql');
     const getAuditLog: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getAuditLog.graphql');
     const getClusterStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getClusterStatus.graphql');
+    const getConfigReady: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getConfigReady.graphql');
     const saveGlobalSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/saveGlobalSettings.graphql');
     const saveJail: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/saveJail.graphql');
     const deleteJail: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/deleteJail.graphql');
@@ -21,6 +22,19 @@ describe('Brute Force Login Protection', () => {
     before(() => {
         cy.login();
     });
+
+    // Cypress retries .should() until it passes or the assertion timeout elapses; the
+    // GraphQL mutations that write global + per-jail config are async on the OSGi side
+    // (ConfigurationAdmin event dispatch), so any test that depends on the new config
+    // being live must wait on this probe before exercising the ban path.
+    const waitForConfigReady = (jail: string): void => {
+        cy.apollo({query: getConfigReady, variables: {jail}})
+            .its('data.bruteForceLoginProtectionConfigReady')
+            .should((r: {globalReady: boolean; jailReady: boolean}) => {
+                expect(r.globalReady, 'global config holder must have received an update').to.eq(true);
+                expect(r.jailReady, `jail "${jail}" must be registered`).to.eq(true);
+            });
+    };
 
     afterEach(() => {
         cy.apollo({mutation: flush});
@@ -212,6 +226,10 @@ describe('Brute Force Login Protection', () => {
                 banTimeSeconds: 15
             }
         });
+
+        // Block until the OSGi listeners have processed both mutations — otherwise the
+        // tracker reads default config (activated=false / maxRetry=6) and the ban never fires.
+        waitForConfigReady('login');
 
         cy.logout();
         cy.clearCookies();

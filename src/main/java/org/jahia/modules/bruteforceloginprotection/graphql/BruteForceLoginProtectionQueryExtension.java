@@ -8,12 +8,15 @@ import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.BannedIp;
 import org.jahia.modules.bruteforceloginprotection.core.BruteForceTracker;
 import org.jahia.modules.bruteforceloginprotection.core.FailureWindow;
+import org.jahia.modules.bruteforceloginprotection.core.GlobalConfigHolder;
 import org.jahia.modules.bruteforceloginprotection.core.JailConfig;
+import org.jahia.modules.bruteforceloginprotection.core.JailConfigTracker;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlAuditEntry;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlBanActionInfo;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlBannedIp;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlClusterStatus;
+import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlConfigReadiness;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlFailureWindow;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlGlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.graphql.types.GqlJail;
@@ -114,6 +117,22 @@ public class BruteForceLoginProtectionQueryExtension {
             out.add(new GqlBanActionInfo(a.getName(), a.getClass().getName(), a.priority()));
         }
         return out;
+    }
+
+    @GraphQLField
+    @GraphQLName("bruteForceLoginProtectionConfigReady")
+    @GraphQLDescription("Readiness probe: globalReady=true once GlobalConfigHolder has received "
+            + "its first ConfigurationAdmin update; jailReady=true once a jail config with the "
+            + "given name has been registered. Lets clients (notably e2e tests) wait for "
+            + "saveGlobalSettings/saveJail mutations to finish propagating before exercising "
+            + "the ban path.")
+    @GraphQLRequiresPermission("admin")
+    public static GqlConfigReadiness configReady(@GraphQLName("jail") String jail) {
+        GlobalConfigHolder global = BundleUtils.getOsgiService(GlobalConfigHolder.class, null);
+        JailConfigTracker tracker = BundleUtils.getOsgiService(JailConfigTracker.class, null);
+        boolean globalReady = global != null && global.isReady();
+        boolean jailReady = tracker != null && jail != null && tracker.hasJail(jail);
+        return new GqlConfigReadiness(globalReady, jailReady);
     }
 
     @GraphQLField
