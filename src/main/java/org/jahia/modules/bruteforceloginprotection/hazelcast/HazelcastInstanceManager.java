@@ -1,7 +1,7 @@
 package org.jahia.modules.bruteforceloginprotection.hazelcast;
 
 import com.hazelcast.config.Config;
-import com.hazelcast.config.SerializerConfig;
+import com.hazelcast.config.GlobalSerializerConfig;
 import com.hazelcast.config.TcpIpConfig;
 import com.hazelcast.config.XmlConfigBuilder;
 import com.hazelcast.core.Hazelcast;
@@ -188,10 +188,10 @@ public class HazelcastInstanceManager implements Runnable {
             return null;
         }
 
-        SerializerConfig serializerConfig = new SerializerConfig()
-                .setImplementation(new ClassLoaderAwareSerializer())
-                .setTypeClass(java.io.Serializable.class);
-        config.getSerializationConfig().addSerializerConfig(serializerConfig);
+        config.getSerializationConfig().setGlobalSerializerConfig(
+                new GlobalSerializerConfig()
+                        .setImplementation(new ClassLoaderAwareSerializer())
+                        .setOverrideJavaSerialization(true));
         config.setClassLoader(classLoader);
 
         String serverId = System.getProperty("cluster.node.serverId", "single");
