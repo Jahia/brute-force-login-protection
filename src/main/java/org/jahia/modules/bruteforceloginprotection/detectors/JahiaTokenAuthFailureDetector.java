@@ -26,7 +26,7 @@ public class JahiaTokenAuthFailureDetector implements AuthFailureDetector {
             return null;
         }
         return FailureSignal.builder(SOURCE_NAME)
-                .extra("authScheme", "jahiatoken")
+                .extra("authScheme", HEADER)
                 .build();
     }
 
