@@ -5,8 +5,11 @@ import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionCons
 import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
+import org.jahia.modules.bruteforceloginprotection.spi.AuthFailureContext;
+import org.jahia.modules.bruteforceloginprotection.spi.AuthFailureDetector;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureEvent;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureRecorder;
+import org.jahia.modules.bruteforceloginprotection.spi.FailureSignal;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureSource;
 import org.jahia.params.valves.AuthValveContext;
 import org.jahia.params.valves.BaseAuthValve;
@@ -20,15 +23,17 @@ import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component(service = {}, immediate = true)
@@ -39,12 +44,9 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     private static final String REMOTE_ADDRESS_HEADER = "x-forwarded-for";
     private static final String KEY_SEPARATOR = ",";
     public static final String AUTH_VALVE_ID = "bruteForceLoginProtectionAuthValve";
-    private static final String BASIC_AUTH_SOURCE = "basic-auth-valve";
-    private static final String BASIC_PREFIX = "Basic ";
-    private static final String APITOKEN_SOURCE = "api-token-valve";
-    private static final String APITOKEN_PREFIX = "APIToken ";
 
     private final AtomicBoolean emptyTrustedProxyWarningEmitted = new AtomicBoolean(false);
+    private final List<AuthFailureDetector> detectors = new CopyOnWriteArrayList<>();
 
     @Reference(target = "(type=authentication)")
     private Pipeline authPipeline;
@@ -57,6 +59,17 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
 
     public AuthValveFailureSource() {
         super();
+    }
+
+    @Reference(service = AuthFailureDetector.class,
+            cardinality = ReferenceCardinality.MULTIPLE,
+            policy = ReferencePolicy.DYNAMIC)
+    public void bindDetector(AuthFailureDetector detector) {
+        detectors.add(detector);
+    }
+
+    public void unbindDetector(AuthFailureDetector detector) {
+        detectors.remove(detector);
     }
 
     @Override
@@ -106,59 +119,48 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             return;
         }
 
-        String authHeader = request.getHeader("Authorization");
-        boolean hadBasicHeader = authHeader != null && authHeader.startsWith(BASIC_PREFIX);
-        boolean hadApiTokenHeader = authHeader != null && authHeader.startsWith(APITOKEN_PREFIX);
-
         valveContext.invokeNext(context);
 
-        Object result = request.getAttribute(LoginEngineAuthValveImpl.VALVE_RESULT);
-        if (result != null && (LoginEngineAuthValveImpl.BAD_PASSWORD.equals(result)
-                || LoginEngineAuthValveImpl.UNKNOWN_USER.equals(result))) {
-            if (remoteAddress == null) {
-                return;
-            }
-            Map<String, String> extras = new HashMap<>();
-            extras.put("result", String.valueOf(result));
-            String username = request.getParameter("username");
-            recordFailure(remoteAddress, getName(), username, request, extras);
+        if (remoteAddress == null) {
             return;
         }
 
-        // HttpBasicAuthValveImpl does not set VALVE_RESULT and disables the login event
-        // (triggerLoginEventEnabled(false)). We detect failure by checking whether the auth
-        // pipeline left the request authenticated: success installs a non-guest user on the
-        // session factory, failure falls through with currentUser null/guest.
-        if (hadBasicHeader && remoteAddress != null && !isAuthenticated(authContext)) {
-            Map<String, String> extras = new HashMap<>();
-            extras.put("authScheme", "basic");
-            recordFailure(remoteAddress, BASIC_AUTH_SOURCE, extractBasicUsername(authHeader), request, extras);
-            return;
-        }
+        AuthFailureContext detectionContext = new AuthFailureContext(
+                request, authContext, isAuthenticated(authContext), remoteAddress);
 
-        // TokenAuthValve (personal-api-tokens module) likewise sets no VALVE_RESULT and fires no
-        // login event: an invalid APIToken just leaves currentUser null/guest. The token itself is
-        // a bearer secret, so we deliberately do not record it as a username.
-        if (hadApiTokenHeader && remoteAddress != null && !isAuthenticated(authContext)) {
-            Map<String, String> extras = new HashMap<>();
-            extras.put("authScheme", "apitoken");
-            recordFailure(remoteAddress, APITOKEN_SOURCE, null, request, extras);
+        FailureSignal signal = runDetectors(detectionContext);
+        if (signal != null) {
+            recordFailure(remoteAddress, signal, request);
         }
     }
 
-    private void recordFailure(String remoteAddress, String sourceName, String username,
-                               HttpServletRequest request, Map<String, String> extras) {
-        String userAgent = request.getHeader("User-Agent");
-        String requestPath = request.getRequestURI();
+    private FailureSignal runDetectors(AuthFailureContext detectionContext) {
+        List<AuthFailureDetector> ordered = new ArrayList<>(detectors);
+        ordered.sort(Comparator.comparingInt(AuthFailureDetector::order));
+        for (AuthFailureDetector detector : ordered) {
+            try {
+                FailureSignal signal = detector.detect(detectionContext);
+                if (signal != null) {
+                    return signal;
+                }
+            } catch (RuntimeException e) {
+                LOGGER.warn("BFLP: detector {} threw: {}",
+                        detector.getClass().getName(), e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private void recordFailure(String remoteAddress, FailureSignal signal, HttpServletRequest request) {
         FailureEvent event = FailureEvent.builder()
                 .ip(remoteAddress)
-                .sourceName(sourceName)
+                .sourceName(signal.getSourceName())
                 .jailName(getName())
                 .timestampMs(System.currentTimeMillis())
-                .username(username)
-                .userAgent(userAgent)
-                .requestPath(requestPath)
-                .extras(extras)
+                .username(signal.getUsername())
+                .userAgent(request.getHeader("User-Agent"))
+                .requestPath(request.getRequestURI())
+                .extras(signal.getExtras())
                 .build();
         try {
             failureRecorder.recordEvent(event);
@@ -173,21 +175,6 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         }
         JahiaUser user = authContext.getSessionFactory().getCurrentUser();
         return user != null && !JahiaUserManagerService.isGuest(user);
-    }
-
-    private static String extractBasicUsername(String authHeader) {
-        try {
-            String encoded = authHeader.substring(BASIC_PREFIX.length()).trim();
-            String decoded = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
-            int colon = decoded.indexOf(':');
-            if (colon <= 0) {
-                return null;
-            }
-            return decoded.substring(0, colon);
-        } catch (IllegalArgumentException e) {
-            // malformed Base64 — still a failed attempt, just without a username
-            return null;
-        }
     }
 
     private String retrieveRemoteAddress(HttpServletRequest request) {
@@ -240,6 +227,11 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             }
         }
         return false;
+    }
+
+    /** Visible for testing. */
+    List<AuthFailureDetector> getDetectorsSnapshot() {
+        return Collections.unmodifiableList(new ArrayList<>(detectors));
     }
 
     private static String sanitize(String value) {

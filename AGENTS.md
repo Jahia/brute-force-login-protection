@@ -88,10 +88,11 @@ Three IMaps:
 
 ## SPI for extensions
 
-Three extension points, all consumed by `BruteForceTracker`:
+Four extension points, all consumed by `BruteForceTracker` / `AuthValveFailureSource`:
 
-- **`FailureSource`** — declarative tag for any component that publishes login failures. Built-in: `AuthValveFailureSource` (Jahia AuthValve). Custom sources call `FailureRecorder.recordFailure(FailureEvent)`.
+- **`FailureSource`** — declarative tag for any component that publishes login failures. Built-in: `AuthValveFailureSource` (Jahia AuthValve). Custom sources call `FailureRecorder.recordEvent(FailureEvent)`.
 - **`FailureRecorder`** — single OSGi service; updates the sliding window for an IP/jail and triggers ban evaluation when the count in the window exceeds `maxRetry`.
+- **`AuthFailureDetector`** — plug-in for new authentication schemes that flow through the Jahia auth pipeline. `AuthValveFailureSource` calls every registered detector after `valveContext.invokeNext()` returns; the first non-null `FailureSignal` is recorded. Built-ins (in `detectors/`, ordered by `order()` ascending): `FormLoginFailureDetector` (100, reads `VALVE_RESULT` — covers `LoginEngineAuthValveImpl` + all `SsoValve` subclasses), `BasicAuthFailureDetector` (200, `Authorization: Basic`), `ApiTokenAuthFailureDetector` (300, `Authorization: APIToken`, no username leak), `JahiaTokenAuthFailureDetector` (400, deprecated `jahiatoken` header). To add a new scheme, register an `@Component(service = AuthFailureDetector.class)` returning a `FailureSignal` when the post-chain state (`AuthFailureContext`) indicates failure.
 - **`BanAction`** — pluggable side-effect, ordered by `priority()` (ascending). All matching actions run on every ban event. Shipped implementations:
 
   | Class | Priority | What it does |
