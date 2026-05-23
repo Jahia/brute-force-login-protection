@@ -7,7 +7,8 @@ Detects and blocks brute-force login attempts against a Jahia server, in the spi
 - **Sliding-window detection** — count failed logins per IP within a configurable time window (`findTime`), not just consecutive failures.
 - **Per-jail configuration** — multiple jails, each with their own thresholds and ban durations.
 - **Persistent bans with recidive escalation** — bans survive restarts; repeat offenders get progressively longer bans, capped by a configurable maximum.
-- **Pluggable failure sources and ban actions** — `FailureSource` and `BanAction` SPIs let other modules contribute events or react to bans (block in-process, email, webhook, custom).
+- **Pluggable failure sources, auth detectors and ban actions** — `FailureSource`, `AuthFailureDetector` and `BanAction` SPIs let other modules contribute events, recognise new authentication schemes, or react to bans (block in-process, email, webhook, custom).
+- **Broad auth coverage out of the box** — form login (and every SSO valve that sets `VALVE_RESULT`), HTTP Basic, Personal API tokens (`Authorization: APIToken …`) and the legacy `jahiatoken` header are all tracked.
 - **Built-in actions**: in-process block, email notification (throttled), webhook POST signed with HMAC-SHA256 (`X-BFLP-Signature` header).
 - **Cluster-aware** — state is shared across Jahia nodes via an embedded Hazelcast instance.
 - **Audit log** — every ban, unban, and config change is recorded and visible from the UI.
@@ -118,6 +119,38 @@ remote socket address of the incoming request must match one of the CIDR entries
 and falls back to the raw socket address.
 
 Configure Jahia's mail server settings to receive notification emails.
+
+## Extending — adding a new auth-failure detector
+
+The auth pipeline valve dispatches every authenticated request through an ordered
+chain of `AuthFailureDetector` services. A custom module that wants to track a new
+authentication scheme just needs to register one:
+
+```java
+@Component(service = AuthFailureDetector.class, immediate = true)
+public class MySchemeFailureDetector implements AuthFailureDetector {
+    @Override
+    public FailureSignal detect(AuthFailureContext context) {
+        if (context.isAuthenticated()) return null;
+        String header = context.getRequest().getHeader("X-My-Scheme");
+        if (header == null) return null;
+        return FailureSignal.builder("my-scheme-valve")
+                .extra("authScheme", "my-scheme")
+                .build();
+    }
+
+    @Override
+    public int order() { return 50; } // run before built-ins (100-400)
+}
+```
+
+Built-in detector orders: form login = `100`, HTTP Basic = `200`, APIToken = `300`,
+legacy `jahiatoken` = `400`. Use `< 100` to pre-empt a built-in or `> 1000` to act
+as a fallback. The valve breaks on the first non-null `FailureSignal` so each
+request records at most one failure event.
+
+Never copy bearer-token strings into `FailureSignal.username` — usernames land in
+the audit log.
 
 ## Upgrading from 2.x
 
