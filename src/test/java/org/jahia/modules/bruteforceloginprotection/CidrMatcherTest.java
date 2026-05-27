@@ -53,6 +53,15 @@ public class CidrMatcherTest {
     }
 
     @Test
+    public void hostnameAddressPartIsRejected() {
+        // Must not fall through to a DNS lookup on config-supplied input.
+        assertThatThrownBy(() -> new CidrMatcher("example.com/24"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new CidrMatcher("localhost"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     public void mixedFamilyDoesNotMatch() {
         CidrMatcher m = new CidrMatcher("2001:db8::/32");
         assertThat(m.matches("192.168.1.1")).isFalse();

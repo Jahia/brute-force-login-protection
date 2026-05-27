@@ -31,6 +31,11 @@ public final class CidrMatcher {
             addressPart = trimmed;
             requestedPrefix = -1;
         }
+        if (!isIpLiteral(addressPart)) {
+            // Reject hostnames: CIDR/whitelist entries must be numeric literals, and resolving a
+            // hostname here would trigger a DNS lookup on configuration-supplied input.
+            throw new IllegalArgumentException("CIDR address part must be an IP literal: " + cidr);
+        }
         final InetAddress address;
         try {
             address = InetAddress.getByName(addressPart);
@@ -65,6 +70,33 @@ public final class CidrMatcher {
         }
         for (int i = 0; i < byteLength; i++) {
             if ((candidate[i] & mask[i]) != network[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * True when {@code value} is a numeric IPv4 or IPv6 literal. The character whitelist (digits
+     * and dots, plus hex and colons for IPv6) guarantees {@link InetAddress#getByName} parses a
+     * literal without ever performing a DNS lookup. Shared with callers that must guard
+     * attacker-supplied addresses against accidental DNS resolution.
+     */
+    public static boolean isIpLiteral(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        boolean ipv6 = value.indexOf(':') >= 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean digit = c >= '0' && c <= '9';
+            boolean dot = c == '.';
+            if (ipv6) {
+                boolean hex = (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!(digit || dot || hex || c == ':')) {
+                    return false;
+                }
+            } else if (!(digit || dot)) {
                 return false;
             }
         }
