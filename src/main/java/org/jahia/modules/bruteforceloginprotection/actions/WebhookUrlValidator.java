@@ -14,10 +14,13 @@ import java.util.Locale;
  * any-local, or cloud-metadata address. The validator is invoked both at settings-save
  * time and immediately before each outbound request.
  *
- * <p>The plain hostname check is best-effort against DNS rebinding (the host is resolved
- * twice — once here, once by {@code HttpURLConnection}); the resolved-IP-with-Host-header
- * pinning is not implemented because it interacts poorly with TLS SNI in this module's
- * runtime. See SECURITY notes in the commit message.</p>
+ * <p>{@link #validateAndResolve(String)} resolves the host exactly once and returns the
+ * validated address so the caller can pin its connection to it. {@code WebhookBanAction} pins
+ * the connection for {@code http} (defeating DNS rebinding, the primary use of which targets the
+ * plaintext cloud-metadata endpoint). For {@code https}, connection-time pinning is intentionally
+ * not applied because supplying an IP literal as the connect host breaks TLS SNI and certificate
+ * hostname verification; that path relies on validation immediately before connect plus disabled
+ * redirects, leaving a small residual rebinding window documented here.</p>
  */
 public final class WebhookUrlValidator {
 
@@ -29,6 +32,19 @@ public final class WebhookUrlValidator {
     }
 
     public static void validateUrl(String url) {
+        validateAndResolve(url);
+    }
+
+    /**
+     * Validates {@code url} and returns the single resolved {@link InetAddress} the caller should
+     * connect to. The host is resolved exactly <strong>once</strong> here and every returned
+     * address is checked, so a caller that pins its connection to the returned IP closes the
+     * DNS-rebinding TOCTOU window between validation and connection (see {@code WebhookBanAction}).
+     *
+     * @throws IllegalArgumentException if the URL is malformed, uses a disallowed scheme, carries
+     *         userinfo, or resolves to any forbidden (internal / metadata) address.
+     */
+    public static InetAddress validateAndResolve(String url) {
         if (StringUtils.isBlank(url)) {
             throw new IllegalArgumentException("Webhook URL must not be blank");
         }
@@ -67,6 +83,7 @@ public final class WebhookUrlValidator {
                         + addr.getHostAddress() + ")");
             }
         }
+        return resolved[0];
     }
 
     private static boolean isForbidden(InetAddress addr) {

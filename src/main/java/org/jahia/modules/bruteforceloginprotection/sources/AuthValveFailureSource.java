@@ -195,22 +195,56 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             }
             return remoteAddr;
         }
-        if (!remoteAddrMatchesTrustedProxy(remoteAddr, trustedCidrs)) {
+        if (!matchesAnyCidr(remoteAddr, trustedCidrs)) {
             return remoteAddr;
         }
         String headerValue = request.getHeader(REMOTE_ADDRESS_HEADER);
-        if (StringUtils.isNotBlank(headerValue)) {
-            String[] parts = headerValue.split(KEY_SEPARATOR);
-            String first = parts[0].trim();
-            if (!first.isEmpty()) {
-                return first;
-            }
+        if (StringUtils.isBlank(headerValue)) {
+            return remoteAddr;
         }
-        return remoteAddr;
+        String client = extractClientFromForwardedChain(headerValue, trustedCidrs);
+        return client != null ? client : remoteAddr;
     }
 
-    private static boolean remoteAddrMatchesTrustedProxy(String remoteAddr, List<String> cidrs) {
-        if (remoteAddr == null) {
+    /**
+     * Resolves the real client address from an {@code X-Forwarded-For} chain, walking
+     * <strong>right-to-left</strong> and skipping addresses that belong to a trusted proxy.
+     * The first non-trusted, well-formed IP literal encountered is the real client.
+     *
+     * <p>This is the security-critical parsing rule for a brute-force counter: taking the
+     * leftmost entry would let any client spoof its address (proxies <em>append</em> the real
+     * peer, so the leftmost value is attacker-controlled), enabling both ban evasion and the
+     * wrongful banning of arbitrary victim IPs. We therefore trust only the hops the proxy
+     * itself added.</p>
+     *
+     * <p>Returns {@code null} when no untrusted address can be established (e.g. every entry is
+     * a trusted proxy, or a malformed entry breaks the chain), so the caller falls back to the
+     * socket peer address.</p>
+     *
+     * <p>Package-private for unit testing.</p>
+     */
+    static String extractClientFromForwardedChain(String headerValue, List<String> trustedCidrs) {
+        String[] parts = headerValue.split(KEY_SEPARATOR);
+        for (int i = parts.length - 1; i >= 0; i--) {
+            String candidate = parts[i].trim();
+            if (!candidate.isEmpty()) {
+                if (!isValidIpLiteral(candidate)) {
+                    // A malformed hop means we can no longer trust positions further left, since an
+                    // attacker could have injected the garbage; stop and fall back to the socket peer.
+                    return null;
+                }
+                if (!matchesAnyCidr(candidate, trustedCidrs)) {
+                    // First non-trusted, well-formed address from the right == the real client.
+                    return candidate;
+                }
+                // Otherwise it's a hop added by a trusted proxy — keep walking towards the client.
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesAnyCidr(String address, List<String> cidrs) {
+        if (address == null || cidrs == null) {
             return false;
         }
         for (String cidr : cidrs) {
@@ -219,7 +253,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
                 continue;
             }
             try {
-                if (new CidrMatcher(trimmed).matches(remoteAddr)) {
+                if (new CidrMatcher(trimmed).matches(address)) {
                     return true;
                 }
             } catch (IllegalArgumentException ignored) {
@@ -227,6 +261,26 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             }
         }
         return false;
+    }
+
+    /**
+     * True when {@code value} is a numeric IPv4 or IPv6 literal. Deliberately rejects anything
+     * containing letters outside the IPv6 hex set so that an attacker-supplied
+     * {@code X-Forwarded-For} value can never (a) trigger a DNS lookup via {@code getByName} or
+     * (b) be persisted verbatim as a Hazelcast map key / JCR node name.
+     */
+    static boolean isValidIpLiteral(String value) {
+        // CidrMatcher.isIpLiteral applies the character whitelist that guarantees the subsequent
+        // getByName parses a literal without ever performing a DNS lookup.
+        if (!CidrMatcher.isIpLiteral(value)) {
+            return false;
+        }
+        try {
+            java.net.InetAddress.getByName(value);
+            return true;
+        } catch (java.net.UnknownHostException e) {
+            return false;
+        }
     }
 
     /** Visible for testing. */

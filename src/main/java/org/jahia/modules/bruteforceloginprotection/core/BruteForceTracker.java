@@ -29,8 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -46,12 +48,25 @@ public class BruteForceTracker implements FailureRecorder {
     private static final String SOURCE_MANUAL = "manual";
     private static final long IGNORE_PATTERN_MATCH_TIMEOUT_MS = 50L;
     private static final long IGNORE_PATTERN_WARN_THROTTLE_MS = 60_000L;
+    // Bounded so a flood of failed logins carrying catastrophic usernames cannot exhaust threads.
+    // Tasks are short-lived (50ms timeout + interruptible matching), so a small pool + queue is
+    // ample; on saturation we abort and fail closed (see evaluateIgnorePattern).
+    private static final int IGNORE_PATTERN_POOL_SIZE =
+            Math.max(2, Runtime.getRuntime().availableProcessors());
+    private static final int IGNORE_PATTERN_QUEUE_CAPACITY = 256;
     private static final ExecutorService IGNORE_PATTERN_EXECUTOR =
-            Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "bflp-regex-matcher");
-                t.setDaemon(true);
-                return t;
-            });
+            new ThreadPoolExecutor(IGNORE_PATTERN_POOL_SIZE, IGNORE_PATTERN_POOL_SIZE,
+                    30L, TimeUnit.SECONDS,
+                    new LinkedBlockingQueue<>(IGNORE_PATTERN_QUEUE_CAPACITY),
+                    r -> {
+                        Thread t = new Thread(r, "bflp-regex-matcher");
+                        t.setDaemon(true);
+                        return t;
+                    },
+                    new ThreadPoolExecutor.AbortPolicy());
+    static {
+        ((ThreadPoolExecutor) IGNORE_PATTERN_EXECUTOR).allowCoreThreadTimeOut(true);
+    }
     private static final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
 
     @Reference
@@ -398,7 +413,17 @@ public class BruteForceTracker implements FailureRecorder {
             LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
             return IgnorePatternResult.NOT_MATCHED;
         }
-        Future<Boolean> future = IGNORE_PATTERN_EXECUTOR.submit(() -> compiled.matcher(username).matches());
+        final Future<Boolean> future;
+        try {
+            // Wrap the input so a cancel(true) interrupt actually aborts catastrophic backtracking:
+            // Matcher polls charAt(), and InterruptibleCharSequence throws on an interrupted thread.
+            future = IGNORE_PATTERN_EXECUTOR.submit(
+                    () -> compiled.matcher(new InterruptibleCharSequence(username)).matches());
+        } catch (RejectedExecutionException ree) {
+            // Pool + queue saturated (likely a ReDoS-style flood). Fail closed, like a timeout.
+            warnIgnorePatternTimeout(p);
+            return IgnorePatternResult.MATCHED;
+        }
         try {
             return Boolean.TRUE.equals(future.get(IGNORE_PATTERN_MATCH_TIMEOUT_MS, TimeUnit.MILLISECONDS))
                     ? IgnorePatternResult.MATCHED
@@ -488,6 +513,52 @@ public class BruteForceTracker implements FailureRecorder {
 
     public static String ipToNodeName(String ip) {
         return "b-" + ip.replace('.', '_').replace(':', '-').replace('/', '_');
+    }
+
+    /**
+     * A {@link CharSequence} view that makes regex matching responsive to thread interruption.
+     * {@link java.util.regex.Matcher} reads its input through {@code charAt}, so checking the
+     * interrupt flag there lets a {@code future.cancel(true)} actually abort a catastrophic
+     * backtracking match instead of leaving the worker thread spinning to completion.
+     */
+    /** Thrown by {@link InterruptibleCharSequence} to abort a regex match on thread interruption. */
+    private static final class RegexInterruptedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        RegexInterruptedException() {
+            super("BFLP: regex matching interrupted");
+        }
+    }
+
+    private static final class InterruptibleCharSequence implements CharSequence {
+        private final CharSequence inner;
+
+        InterruptibleCharSequence(CharSequence inner) {
+            this.inner = inner;
+        }
+
+        @Override
+        public char charAt(int index) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new RegexInterruptedException();
+            }
+            return inner.charAt(index);
+        }
+
+        @Override
+        public int length() {
+            return inner.length();
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return new InterruptibleCharSequence(inner.subSequence(start, end));
+        }
+
+        @Override
+        public String toString() {
+            return inner.toString();
+        }
     }
 
     public Map<String, Object> getNotificationMarkersInfo() {

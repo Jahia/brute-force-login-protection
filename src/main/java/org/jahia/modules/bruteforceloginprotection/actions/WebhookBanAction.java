@@ -15,8 +15,11 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -66,8 +69,9 @@ public class WebhookBanAction implements BanAction {
         if (StringUtils.isBlank(url)) {
             return;
         }
+        final InetAddress pinned;
         try {
-            WebhookUrlValidator.validateUrl(url);
+            pinned = WebhookUrlValidator.validateAndResolve(url);
         } catch (IllegalArgumentException ex) {
             LOGGER.warn("BFLP: webhook URL rejected by SSRF guard: {}", ex.getMessage());
             return;
@@ -76,7 +80,7 @@ public class WebhookBanAction implements BanAction {
         String secret = settings.getWebhookSecret();
         final HttpURLConnection[] connHolder = new HttpURLConnection[1];
         Future<Void> future = WEBHOOK_EXECUTOR.submit(() -> {
-            deliver(url, body, secret, connHolder);
+            deliver(url, pinned, body, secret, connHolder);
             return null;
         });
         try {
@@ -107,8 +111,9 @@ public class WebhookBanAction implements BanAction {
         if (StringUtils.isBlank(url)) {
             return IntegrationTestResult.fail("No webhook URL configured");
         }
+        final InetAddress pinned;
         try {
-            WebhookUrlValidator.validateUrl(url);
+            pinned = WebhookUrlValidator.validateAndResolve(url);
         } catch (IllegalArgumentException ex) {
             return IntegrationTestResult.fail("URL rejected: " + ex.getMessage());
         }
@@ -121,21 +126,11 @@ public class WebhookBanAction implements BanAction {
         String secret = settings.getWebhookSecret();
         HttpURLConnection conn = null;
         try {
-            URL u = new URL(url);
-            conn = (HttpURLConnection) u.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            applySignature(conn, body, secret);
-            conn.setDoOutput(true);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(body.getBytes(StandardCharsets.UTF_8));
-            }
-            int code = conn.getResponseCode();
+            conn = openConnection(url, pinned);
+            int code = sendPost(conn, body, secret);
             String summary = "HTTP " + code;
-            return code < 400
+            // Redirects are disabled, so treat any non-2xx (including 3xx) as a failure.
+            return code < 300
                     ? IntegrationTestResult.ok("Webhook accepted (" + summary + ")")
                     : IntegrationTestResult.fail("Webhook rejected (" + summary + ")");
         } catch (Exception e) {
@@ -147,29 +142,65 @@ public class WebhookBanAction implements BanAction {
         }
     }
 
-    private static void deliver(String url, String body, String secret, HttpURLConnection[] connHolder) {
+    private static void deliver(String url, InetAddress pinned, String body, String secret, HttpURLConnection[] connHolder) {
         try {
-            URL u = new URL(url);
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            HttpURLConnection conn = openConnection(url, pinned);
             connHolder[0] = conn;
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            applySignature(conn, body, secret);
-            conn.setDoOutput(true);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(body.getBytes(StandardCharsets.UTF_8));
-            }
-            int code = conn.getResponseCode();
-            if (code >= 400) {
+            int code = sendPost(conn, body, secret);
+            if (code >= 300) {
                 LOGGER.warn("BFLP: webhook returned status {}", code);
             }
             conn.disconnect();
         } catch (Exception e) {
             LOGGER.warn("BFLP: webhook delivery failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Configures the (already-opened) connection as a signed JSON POST, writes the body, and
+     * returns the HTTP status code. Shared by the production delivery and the admin test path so
+     * both apply identical headers, timeouts, and HMAC signing.
+     */
+    private static int sendPost(HttpURLConnection conn, String body, String secret) throws java.io.IOException {
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("User-Agent", "BFLP-Webhook/1.0");
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(5000);
+        applySignature(conn, body, secret);
+        conn.setDoOutput(true);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.getBytes(StandardCharsets.UTF_8));
+        }
+        return conn.getResponseCode();
+    }
+
+    /**
+     * Opens the webhook connection with redirect-following disabled (so a malicious endpoint
+     * cannot 3xx-redirect past the SSRF guard into an internal address). For {@code http} the
+     * connection is pinned to {@code pinned} — the exact IP validated by the SSRF guard — and the
+     * original host is sent in the {@code Host} header, closing the DNS-rebinding window. For
+     * {@code https} the original URL is used so TLS SNI and certificate hostname verification
+     * still work; that path relies on validate-immediately-before-connect plus disabled redirects.
+     */
+    private static HttpURLConnection openConnection(String url, InetAddress pinned) throws java.io.IOException {
+        URL original = new URL(url);
+        HttpURLConnection conn;
+        if ("http".equalsIgnoreCase(original.getProtocol()) && pinned != null) {
+            int port = original.getPort() >= 0 ? original.getPort() : original.getDefaultPort();
+            String literal = pinned.getHostAddress();
+            String hostForUrl = (pinned instanceof Inet6Address) ? "[" + literal + "]" : literal;
+            URL pinnedUrl = new URL(original.getProtocol(), hostForUrl, port, original.getFile());
+            conn = (HttpURLConnection) pinnedUrl.openConnection();
+            String hostHeader = original.getPort() >= 0
+                    ? original.getHost() + ":" + original.getPort()
+                    : original.getHost();
+            conn.setRequestProperty("Host", hostHeader.toLowerCase(Locale.ROOT));
+        } else {
+            conn = (HttpURLConnection) original.openConnection();
+        }
+        conn.setInstanceFollowRedirects(false);
+        return conn;
     }
 
     private static void applySignature(HttpURLConnection conn, String body, String secret) {
