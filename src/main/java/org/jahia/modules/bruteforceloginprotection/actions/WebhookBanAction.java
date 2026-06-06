@@ -17,6 +17,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -183,14 +185,14 @@ public class WebhookBanAction implements BanAction {
      * {@code https} the original URL is used so TLS SNI and certificate hostname verification
      * still work; that path relies on validate-immediately-before-connect plus disabled redirects.
      */
-    private static HttpURLConnection openConnection(String url, InetAddress pinned) throws java.io.IOException {
-        URL original = new URL(url);
+    private static HttpURLConnection openConnection(String url, InetAddress pinned) throws java.io.IOException, URISyntaxException {
+        URL original = URI.create(url).toURL();
         HttpURLConnection conn;
         if ("http".equalsIgnoreCase(original.getProtocol()) && pinned != null) {
             int port = original.getPort() >= 0 ? original.getPort() : original.getDefaultPort();
             String literal = pinned.getHostAddress();
             String hostForUrl = (pinned instanceof Inet6Address) ? "[" + literal + "]" : literal;
-            URL pinnedUrl = new URL(original.getProtocol(), hostForUrl, port, original.getFile());
+            URL pinnedUrl = new URI(original.getProtocol(), null, hostForUrl, port, original.getFile(), null, null).toURL();
             conn = (HttpURLConnection) pinnedUrl.openConnection();
             String hostHeader = original.getPort() >= 0
                     ? original.getHost() + ":" + original.getPort()
