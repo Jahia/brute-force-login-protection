@@ -18,6 +18,12 @@ public final class WebhookSecretCodec {
         // utility
     }
 
+    /**
+     * Encrypts {@code plain} and returns the {@code {enc}}-prefixed ciphertext.
+     *
+     * @throws IllegalStateException if encryption fails — callers must not persist the secret when
+     *                               this method throws, as that would store plaintext in the .cfg.
+     */
     public static String encrypt(String plain) {
         if (plain == null) {
             return null;
@@ -25,8 +31,8 @@ public final class WebhookSecretCodec {
         try {
             return ENC_PREFIX + EncryptionUtils.passwordBaseEncrypt(plain);
         } catch (Exception e) {
-            LOGGER.warn("BFLP: failed to encrypt webhookSecret, storing plaintext fallback: {}", e.getMessage());
-            return plain;
+            LOGGER.error("BFLP: failed to encrypt webhookSecret — refusing to persist plaintext: {}", e.getMessage());
+            throw new IllegalStateException("BFLP: webhookSecret encryption failed", e);
         }
     }
 
