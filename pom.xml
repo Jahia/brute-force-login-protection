@@ -100,7 +100,9 @@
       <plugin>
         <groupId>com.github.eirslett</groupId>
         <artifactId>frontend-maven-plugin</artifactId>
-        <version>2.0.0</version>
+        <!-- Pinned to the 1.x line: frontend-maven-plugin 2.x requires Java 17, but this
+             module builds on Java 11 (jahia-modules 8.2 baseline; see AGENTS.md). -->
+        <version>1.15.0</version>
         <executions>
           <execution>
             <id>npm install node and yarn</id>
