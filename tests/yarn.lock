@@ -2987,7 +2987,7 @@ __metadata:
     prettier: ^2.0.0
     source-map-support: ^0.5.20
     supports-color: ^9.0.2
-    typescript: ^4.4.4
+    typescript: ^6.0.3
     webpack: 5.104.1
   languageName: unknown
   linkType: soft
@@ -8771,7 +8771,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^4.4.3, typescript@npm:^4.4.4":
+"typescript@npm:^4.4.3":
   version: 4.9.5
   resolution: "typescript@npm:4.9.5"
   bin:
@@ -8781,7 +8781,27 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@^4.4.4#~builtin<compat/typescript>, typescript@patch:typescript@npm%3A^4.4.3#~builtin<compat/typescript>":
+"typescript@npm:^6.0.3":
+  version: 6.0.3
+  resolution: "typescript@npm:6.0.3"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 8/c1182dfadf8a8cb22a4e32442715afef1af1b950ae635b1c52c27e0d7fb7a5e2607ed7c7c4079bba4163579250e02445fd8d46b09cbceda71ff72a5b7d69db61
+  languageName: node
+  linkType: hard
+
+"typescript@patch:typescript@^6.0.3#~builtin<compat/typescript>":
+  version: 6.0.3
+  resolution: "typescript@patch:typescript@npm%3A6.0.3#~builtin<compat/typescript>::version=6.0.3&hash=5786d5"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 8/238430fdcadd2ca8ec7179bc644b324dbe4d13d647efae95351f216c7d9645092c0d848a45bd5a27a3d9058e2466eb8d67f9d944e2a78fa32171eee2e2f8d11e
+  languageName: node
+  linkType: hard
+
+"typescript@patch:typescript@npm%3A^4.4.3#~builtin<compat/typescript>":
   version: 4.9.5
   resolution: "typescript@patch:typescript@npm%3A4.9.5#~builtin<compat/typescript>::version=4.9.5&hash=289587"
   bin:
