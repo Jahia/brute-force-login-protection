@@ -92,6 +92,9 @@ public class UnbanScheduler {
         } catch (Exception e) {
             LOGGER.warn("BFLP: unban sweep failed: {}", e.getMessage());
         }
+        // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
+        // on the hot login-failure recording path).
+        auditLogger.trimAuditLog();
     }
 
     private void dispatchUnbanActions(BanContext ctx) {

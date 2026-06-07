@@ -18,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants.*;
 
@@ -41,6 +42,14 @@ public class AuditLogger {
     private static final DateTimeFormatter BUCKET_MONTH = DateTimeFormatter.ofPattern("MM");
     private static final DateTimeFormatter BUCKET_DAY = DateTimeFormatter.ofPattern("dd");
 
+    /**
+     * Piggyback trim: after this many writes have accumulated since the last trim, a trim is
+     * triggered inline. This keeps the log bounded even if the periodic sweep in
+     * {@link UnbanScheduler} fires infrequently, while avoiding an O(n) JCR scan on every write.
+     */
+    private static final long TRIM_WRITE_INTERVAL = 50;
+    private final AtomicLong writesSinceTrim = new AtomicLong(0);
+
     public void log(String event, String ip, String jail, String source, String details) {
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
@@ -57,11 +66,39 @@ public class AuditLogger {
                 if (source != null) entry.setProperty(PROP_AUDIT_SOURCE, source);
                 if (details != null) entry.setProperty(PROP_AUDIT_DETAILS, details);
                 session.save();
-                trimIfNeeded(container);
+                // Trim is deliberately NOT called here on every write (O(n) JCR scan).
+                // The periodic sweep in UnbanScheduler calls trimAuditLog() every 30 s.
+                // As a safety net, piggyback a trim every TRIM_WRITE_INTERVAL writes so the
+                // log stays bounded even under high load between sweeps.
+                if (writesSinceTrim.incrementAndGet() >= TRIM_WRITE_INTERVAL) {
+                    writesSinceTrim.set(0);
+                    trimIfNeeded(container);
+                }
                 return null;
             });
         } catch (RepositoryException e) {
             LOGGER.warn("BFLP: failed to write audit entry: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Public entry point for the periodic trim sweep called by {@link UnbanScheduler}.
+     * Performs the O(n) full JCR scan only when invoked from the scheduler thread,
+     * not on the hot per-login-failure write path.
+     */
+    public void trimAuditLog() {
+        try {
+            jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
+                if (!session.nodeExists(AUDIT_NODE_PATH)) {
+                    return null;
+                }
+                JCRNodeWrapper container = session.getNode(AUDIT_NODE_PATH);
+                trimIfNeeded(container);
+                writesSinceTrim.set(0);
+                return null;
+            });
+        } catch (RepositoryException e) {
+            LOGGER.warn("BFLP: failed during periodic audit log trim: {}", e.getMessage());
         }
     }
 

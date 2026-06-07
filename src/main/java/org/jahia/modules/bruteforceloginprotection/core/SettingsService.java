@@ -160,9 +160,14 @@ public class SettingsService {
         if (newSecret == null) {
             // Unchanged from caller's POV. Opportunistically re-encrypt operator-pasted plaintext.
             if (existing != null && !WebhookSecretCodec.isEncrypted(String.valueOf(existing))) {
-                String reEncrypted = WebhookSecretCodec.encrypt(String.valueOf(existing));
-                if (reEncrypted != null) {
-                    props.put(GlobalConfigHolder.CFG_WEBHOOK_SECRET, reEncrypted);
+                try {
+                    String reEncrypted = WebhookSecretCodec.encrypt(String.valueOf(existing));
+                    if (reEncrypted != null) {
+                        props.put(GlobalConfigHolder.CFG_WEBHOOK_SECRET, reEncrypted);
+                    }
+                } catch (IllegalStateException e) {
+                    // Re-encryption is best-effort; skip silently so settings save still succeeds
+                    LOGGER.warn("BFLP: opportunistic re-encryption of existing secret skipped: {}", e.getMessage());
                 }
             }
             return;

@@ -13,6 +13,7 @@ import org.jahia.modules.bruteforceloginprotection.spi.FailureRecorder;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.osgi.service.component.annotations.ReferencePolicy;
@@ -94,6 +95,11 @@ public class BruteForceTracker implements FailureRecorder {
 
     public void removeBanAction(BanAction action) {
         banActions.remove(action);
+    }
+
+    @Deactivate
+    public void deactivate() {
+        IGNORE_PATTERN_EXECUTOR.shutdownNow();
     }
 
     public List<BanAction> getBanActions() {
