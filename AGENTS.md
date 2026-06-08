@@ -106,9 +106,10 @@ Custom modules just need to publish an OSGi `@Component` implementing `BanAction
 ## Build
 
 ```bash
-JAVA_HOME=/usr/local/graalvm mvn clean install sonar:sonar   # Full build + SonarQube scan (needs Java 17)
-mvn clean install                                             # Full build only (Java 11 ok)
-mvn test                                                      # JUnit only
+# This module targets Java 17 (build + runtime) — build with a JDK 17 (e.g. GraalVM 17).
+JAVA_HOME=/usr/local/graalvm mvn clean install                # Full build (requires Java 17)
+JAVA_HOME=/usr/local/graalvm mvn clean install sonar:sonar    # Full build + SonarQube scan
+mvn test                                                      # JUnit only (requires Java 17)
 yarn build              # Frontend only
 yarn watch              # Frontend dev watch
 yarn lint               # ESLint (src/javascript)
@@ -116,7 +117,7 @@ yarn lint:fix           # ESLint with auto-fix
 ```
 
 - Node v22.6.0, Yarn v1.22.21 (classic, `nodeLinker: node-modules`)
-- GraalVM Java 17 at `/usr/local/graalvm/` — required for `sonar-maven-plugin:3.10.0.2594` (class file 61.0)
+- **Java 17 required** (compiler `release` 17; overrides the jahia-modules 8.2 Java 11 baseline). Jahia 8.2 runs on Java 17. GraalVM Java 17 at `/usr/local/graalvm/`.
 - SonarQube project key: `org.jahia.community:brute-force-login-protection`
 - Frontend entry: `src/javascript/index.js` → React component under `src/javascript/BruteForceLoginProtection/`, tabbed UI in `BruteForceLoginProtection/tabs/` (`GeneralTab`, `JailsTab`, `BansTab`, `AuditTab`, `IntegrationsTab`)
 - CSS modules use `bflp_` prefix (e.g. `bflp_alert--success`, `bflp_emptyState`)
