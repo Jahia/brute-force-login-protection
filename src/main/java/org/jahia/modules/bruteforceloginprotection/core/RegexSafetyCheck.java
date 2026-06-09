@@ -11,6 +11,7 @@ public final class RegexSafetyCheck {
 
     public static final int MAX_PATTERN_LENGTH = 200;
     public static final int MAX_QUANTIFIERS_PER_GROUP = 2;
+    public static final int MAX_GROUP_DEPTH = 32;
 
     private RegexSafetyCheck() {
         // utility
@@ -65,7 +66,7 @@ public final class RegexSafetyCheck {
 
     private static void assertGroupQuantifierDensity(String pattern) {
         int depth = 0;
-        int[] quantsAtDepth = new int[64];
+        int[] quantsAtDepth = new int[MAX_GROUP_DEPTH + 1];
         boolean escaped = false;
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
@@ -73,8 +74,14 @@ public final class RegexSafetyCheck {
                 escaped = false;
             } else if (c == '\\' && i + 1 < pattern.length()) {
                 escaped = true;
-            } else if (c == '(' && depth + 1 < quantsAtDepth.length) {
+            } else if (c == '(') {
                 depth++;
+                if (depth > MAX_GROUP_DEPTH) {
+                    // Reject rather than silently stop tracking: extreme nesting is itself a ReDoS
+                    // smell, and letting it through would bypass the per-group quantifier check.
+                    throw new IllegalArgumentException(
+                            "Pattern group nesting exceeds " + MAX_GROUP_DEPTH);
+                }
                 quantsAtDepth[depth] = 0;
             } else if (c == ')' && depth > 0) {
                 if (quantsAtDepth[depth] > MAX_QUANTIFIERS_PER_GROUP) {

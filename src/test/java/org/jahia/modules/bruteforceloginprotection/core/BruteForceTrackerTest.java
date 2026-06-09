@@ -2,6 +2,7 @@ package org.jahia.modules.bruteforceloginprotection.core;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.core.LifecycleService;
 import org.jahia.modules.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureEvent;
@@ -58,6 +59,9 @@ public class BruteForceTrackerTest {
         bansStore = new ConcurrentHashMap<>();
 
         when(hazelcastManager.getHazelcastInstance()).thenReturn(hazelcast);
+        LifecycleService lifecycleService = mock(LifecycleService.class);
+        when(hazelcast.getLifecycleService()).thenReturn(lifecycleService);
+        when(lifecycleService.isRunning()).thenReturn(true);
         when(hazelcast.<String, FailureWindow>getMap("bflp:windows")).thenReturn(windowsMap);
         when(hazelcast.<String, BannedIp>getMap("bflp:bans")).thenReturn(bansMap);
         when(hazelcast.getMap("bflp:notifMarkers")).thenReturn(mock(IMap.class));
@@ -147,6 +151,35 @@ public class BruteForceTrackerTest {
                 .requestPath("/cms/login")
                 .extras(new HashMap<>())
                 .build();
+    }
+
+    @Test
+    public void banManuallyRejectsNonIpValue() {
+        // S1: a hostname or garbage value must never be stored as a ban (no DNS lookup, no poisoning).
+        assertThat(tracker.banManually("evil.example.com", "login", 300, "reason")).isFalse();
+        assertThat(tracker.banManually("not-an-ip", null, null, null)).isFalse();
+        assertThat(bansStore).isEmpty();
+        verify(auditLogger, never()).log(eq(AuditLogger.EVENT_BAN), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void banManuallyWithValidIpCreatesBan() {
+        when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
+        when(settingsService.getJail("login")).thenReturn(loginJail(3, 60L, 60L));
+
+        assertThat(tracker.banManually("203.0.113.7", "login", 300, "manual test")).isTrue();
+
+        assertThat(bansStore).containsKey("203.0.113.7");
+        assertThat(bansStore.get("203.0.113.7").getBannedUntil()).isGreaterThan(System.currentTimeMillis());
+    }
+
+    @Test
+    public void isIpCurrentlyBannedFailsOpenWhenHazelcastNotRunning() {
+        // R4: if the distributed store is down we fail open (do not block logins) even with a ban present.
+        when(hazelcast.getLifecycleService().isRunning()).thenReturn(false);
+        long now = System.currentTimeMillis();
+        bansStore.put("4.4.4.4", new BannedIp("4.4.4.4", "login", "manual", now, now + 60000L, 1, "x"));
+        assertThat(tracker.isIpCurrentlyBanned("4.4.4.4")).isFalse();
     }
 
     @Test

@@ -69,6 +69,7 @@ public class BruteForceTracker implements FailureRecorder {
         ((ThreadPoolExecutor) IGNORE_PATTERN_EXECUTOR).allowCoreThreadTimeOut(true);
     }
     private static final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
+    private static final AtomicLong lastHazelcastDownWarnMs = new AtomicLong(0L);
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -138,22 +139,35 @@ public class BruteForceTracker implements FailureRecorder {
         long now = event.getTimestampMs() > 0 ? event.getTimestampMs() : System.currentTimeMillis();
         String key = event.getIp() + "|" + jail.getName();
         IMap<String, FailureWindow> windows = hz.getMap(MAP_WINDOWS);
-        FailureWindow window = windows.get(key);
-        if (window == null) {
-            window = new FailureWindow(event.getIp(), jail.getName());
+        // The read-modify-write of the per-IP failure window must be atomic across the cluster:
+        // without the per-key lock, two concurrent failures for the same IP can both read the same
+        // window, mutate independent copies and write back, losing one increment (delayed/missed ban).
+        // The lock scope is kept tight — audit logging and ban dispatch (which can do JCR/HTTP I/O)
+        // run outside it so the key lock is never held across slow or external calls.
+        boolean banTriggered = false;
+        windows.lock(key);
+        try {
+            FailureWindow window = windows.get(key);
+            if (window == null) {
+                window = new FailureWindow(event.getIp(), jail.getName());
+            }
+            window.prune(now - (jail.getFindTimeSec() * 1000L));
+            window.add(now);
+            if (window.size() >= jail.getMaxRetry()) {
+                banTriggered = true;
+                windows.remove(key);
+            } else {
+                windows.put(key, window, jail.getFindTimeSec() * 2L, TimeUnit.SECONDS);
+            }
+        } finally {
+            windows.unlock(key);
         }
-        long cutoff = now - (jail.getFindTimeSec() * 1000L);
-        window.prune(cutoff);
-        window.add(now);
 
         auditLogger.log(AuditLogger.EVENT_FAILURE, event.getIp(), jail.getName(), event.getSourceName(),
                 "username=" + AuditLogger.sanitize(event.getUsername()));
 
-        if (window.size() >= jail.getMaxRetry()) {
+        if (banTriggered) {
             doBan(hz, event, jail, settings, now);
-            windows.remove(key);
-        } else {
-            windows.put(key, window, jail.getFindTimeSec() * 2L, TimeUnit.SECONDS);
         }
     }
 
@@ -238,7 +252,11 @@ public class BruteForceTracker implements FailureRecorder {
     }
 
     public boolean banManually(String ip, String jailName, Integer durationSeconds, String reason) {
-        if (StringUtils.isBlank(ip)) {
+        if (StringUtils.isBlank(ip) || !CidrMatcher.isIpLiteral(ip)) {
+            // Manual bans (GraphQL/Karaf) must be IP literals: a hostname or garbage value would be
+            // stored as a map/JCR key, could trigger DNS resolution on the ban-check path, and would
+            // never match a real client address. Reject it at the boundary.
+            LOGGER.warn("BFLP: refusing manual ban of non-IP value '{}'", AuditLogger.sanitize(ip));
             return false;
         }
         HazelcastInstance hz = hazelcastInstance();
@@ -253,6 +271,9 @@ public class BruteForceTracker implements FailureRecorder {
         if (settings.getMaxBanTimeSec() > 0 && banSec > settings.getMaxBanTimeSec()) {
             banSec = settings.getMaxBanTimeSec();
         }
+        // Never store a zero/negative-duration ban (a misconfigured jail ban-time would otherwise
+        // produce a ban that expires immediately and silently provides no protection).
+        banSec = Math.max(1L, banSec);
         IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
         BannedIp existing = bans.get(ip);
         int prevCount = existing != null ? existing.getBanCount() : readBanCountFromJcr(ip);
@@ -335,7 +356,16 @@ public class BruteForceTracker implements FailureRecorder {
             return false;
         }
         HazelcastInstance hz = hazelcastInstance();
-        if (hz == null) {
+        // Treat a missing OR not-running Hazelcast as "cannot enforce". This is the per-request
+        // hot path, so we deliberately fail OPEN: blocking every login because the distributed
+        // ban store is down would be a self-inflicted denial of service. We surface it with a
+        // throttled WARN so operators notice the protection gap without flooding the log.
+        if (hz == null || !hz.getLifecycleService().isRunning()) {
+            long nowMs = System.currentTimeMillis();
+            long last = lastHazelcastDownWarnMs.get();
+            if (nowMs - last > IGNORE_PATTERN_WARN_THROTTLE_MS && lastHazelcastDownWarnMs.compareAndSet(last, nowMs)) {
+                LOGGER.warn("BFLP: Hazelcast unavailable; ban enforcement temporarily disabled (fail-open)");
+            }
             return false;
         }
         IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);

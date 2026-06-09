@@ -56,45 +56,49 @@ public class UnbanScheduler {
     }
 
     public void sweep() {
+        // scheduleWithFixedDelay permanently cancels the task if its run throws, so this method must
+        // never propagate anything — catch Throwable (not just Exception) around the ENTIRE body,
+        // including the audit-log trim, so a transient failure only skips one interval.
         try {
             HazelcastInstance hz = hazelcastManager.getHazelcastInstance();
-            if (hz == null || !hazelcastManager.isRunning()) {
-                return;
-            }
-            IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
-            long now = System.currentTimeMillis();
-            Set<String> toRemove = new HashSet<>();
-            List<BannedIp> expired = new ArrayList<>();
-            for (Map.Entry<String, BannedIp> e : bans.entrySet()) {
-                BannedIp b = e.getValue();
-                if (b != null && b.isExpired(now)) {
-                    toRemove.add(e.getKey());
-                    expired.add(b);
+            if (hz != null && hazelcastManager.isRunning()) {
+                IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
+                long now = System.currentTimeMillis();
+                Set<String> toRemove = new HashSet<>();
+                List<BannedIp> expired = new ArrayList<>();
+                // Iterate a snapshot so a concurrent unbanIp()/eviction cannot make us skip an entry
+                // mid-iteration (and so each expiry dispatches its unban actions exactly once).
+                for (Map.Entry<String, BannedIp> e : new ArrayList<>(bans.entrySet())) {
+                    BannedIp b = e.getValue();
+                    if (b != null && b.isExpired(now)) {
+                        toRemove.add(e.getKey());
+                        expired.add(b);
+                    }
+                }
+                for (String key : toRemove) {
+                    bans.remove(key);
+                }
+                for (BannedIp b : expired) {
+                    tracker.removeBanFromJcr(b.getIp());
+                    auditLogger.log(AuditLogger.EVENT_UNBAN, b.getIp(), b.getJailName(), b.getSourceName(), "auto-unban");
+                    BanContext ctx = BanContext.builder()
+                            .ip(b.getIp())
+                            .jailName(b.getJailName())
+                            .sourceName(b.getSourceName())
+                            .bannedAt(b.getBannedAt())
+                            .bannedUntil(b.getBannedUntil())
+                            .banCount(b.getBanCount())
+                            .reason(b.getReason())
+                            .build();
+                    dispatchUnbanActions(ctx);
                 }
             }
-            for (String key : toRemove) {
-                bans.remove(key);
-            }
-            for (BannedIp b : expired) {
-                tracker.removeBanFromJcr(b.getIp());
-                auditLogger.log(AuditLogger.EVENT_UNBAN, b.getIp(), b.getJailName(), b.getSourceName(), "auto-unban");
-                BanContext ctx = BanContext.builder()
-                        .ip(b.getIp())
-                        .jailName(b.getJailName())
-                        .sourceName(b.getSourceName())
-                        .bannedAt(b.getBannedAt())
-                        .bannedUntil(b.getBannedUntil())
-                        .banCount(b.getBanCount())
-                        .reason(b.getReason())
-                        .build();
-                dispatchUnbanActions(ctx);
-            }
-        } catch (Exception e) {
-            LOGGER.warn("BFLP: unban sweep failed: {}", e.getMessage());
+            // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
+            // on the hot login-failure recording path).
+            auditLogger.trimAuditLog();
+        } catch (Throwable t) {
+            LOGGER.error("BFLP: unban sweep failed; will retry on next interval", t);
         }
-        // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
-        // on the hot login-failure recording path).
-        auditLogger.trimAuditLog();
     }
 
     private void dispatchUnbanActions(BanContext ctx) {

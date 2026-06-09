@@ -19,6 +19,7 @@ import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants.*;
 
@@ -135,6 +136,7 @@ public class SettingsService {
             props.put(GlobalConfigHolder.CFG_EMAIL_ENABLED, String.valueOf(u.getEmailEnabled()));
         }
         if (u.getEmailRecipient() != null) {
+            validateEmailRecipient(u.getEmailRecipient());
             props.put(GlobalConfigHolder.CFG_EMAIL_RECIPIENT, u.getEmailRecipient());
         }
         if (u.getWebhookUrl() != null) {
@@ -142,6 +144,33 @@ public class SettingsService {
                 WebhookUrlValidator.validateUrl(u.getWebhookUrl());
             }
             props.put(GlobalConfigHolder.CFG_WEBHOOK_URL, u.getWebhookUrl());
+        }
+    }
+
+    // Lenient address shape (not RFC-complete) — enough to reject obvious garbage while accepting
+    // ordinary addresses. Used only as defense-in-depth on top of the control-char/CRLF rejection.
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@,]+@[^\\s@,]+\\.[^\\s@,]+$");
+
+    /**
+     * Rejects an email recipient that contains control characters / CRLF (which would otherwise be
+     * persisted to the .cfg and enable SMTP header injection in {@code EmailBanAction}) or that is
+     * not address-shaped. Supports a comma-separated list. Blank is allowed (clears the recipient).
+     */
+    private static void validateEmailRecipient(String recipient) {
+        if (StringUtils.isBlank(recipient)) {
+            return;
+        }
+        for (int i = 0; i < recipient.length(); i++) {
+            char c = recipient.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                throw new IllegalArgumentException("Email recipient contains control characters");
+            }
+        }
+        for (String addr : recipient.split(",")) {
+            String trimmed = addr.trim();
+            if (!trimmed.isEmpty() && !EMAIL_PATTERN.matcher(trimmed).matches()) {
+                throw new IllegalArgumentException("Invalid email recipient: " + AuditLogger.sanitize(trimmed));
+            }
         }
     }
 
