@@ -30,7 +30,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionSaveGlobalSettings")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     @SuppressWarnings("java:S107") // GraphQL schema arity: argument names are part of the public schema
     public static Boolean saveGlobalSettings(
             @GraphQLName("activated") Boolean activated,
@@ -66,7 +66,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionSaveJail")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean saveJail(
             @GraphQLName("name") @GraphQLNonNull String name,
             @GraphQLName("enabled") Boolean enabled,
@@ -80,7 +80,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionDeleteJail")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean deleteJail(@GraphQLName("name") @GraphQLNonNull String name) {
         SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
         if (svc == null) return Boolean.FALSE;
@@ -89,7 +89,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionUnbanIp")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean unbanIp(@GraphQLName("ip") @GraphQLNonNull String ip) {
         BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
         if (tracker == null) return Boolean.FALSE;
@@ -98,7 +98,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionBanIp")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean banIp(
             @GraphQLName("ip") @GraphQLNonNull String ip,
             @GraphQLName("jail") String jail,
@@ -112,7 +112,7 @@ public class BruteForceLoginProtectionMutationExtension {
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionFlush")
     @GraphQLDescription("Clear all bans + windows from cluster + JCR")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean flush() {
         BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
         if (tracker == null) return Boolean.FALSE;
@@ -121,7 +121,7 @@ public class BruteForceLoginProtectionMutationExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionClearAuditLog")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static Boolean clearAuditLog() {
         AuditLogger audit = BundleUtils.getOsgiService(AuditLogger.class, null);
         if (audit == null) return Boolean.FALSE;
@@ -131,7 +131,7 @@ public class BruteForceLoginProtectionMutationExtension {
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionTestEmail")
     @GraphQLDescription("Sends a synchronous test notification using the currently persisted email settings, bypassing the per-IP throttle.")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static GqlTestResult testEmail() {
         EmailBanAction action = BundleUtils.getOsgiService(EmailBanAction.class, null);
         if (action == null) {
@@ -143,7 +143,7 @@ public class BruteForceLoginProtectionMutationExtension {
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionTestWebhook")
     @GraphQLDescription("POSTs a synchronous test payload to the currently persisted webhook URL, applying the same SSRF guard and HMAC signing as the production path.")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static GqlTestResult testWebhook() {
         WebhookBanAction action = BundleUtils.getOsgiService(WebhookBanAction.class, null);
         if (action == null) {

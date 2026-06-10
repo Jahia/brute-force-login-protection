@@ -42,7 +42,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionGlobalSettings")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static GqlGlobalSettings globalSettings() {
         SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
         if (svc == null) return null;
@@ -51,7 +51,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionJails")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static List<GqlJail> jails() {
         SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
         if (svc == null) return Collections.emptyList();
@@ -64,7 +64,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionBannedIps")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static List<GqlBannedIp> bannedIps() {
         BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
         if (tracker == null) return Collections.emptyList();
@@ -78,7 +78,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionTrackedWindows")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static List<GqlFailureWindow> trackedWindows() {
         BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
         if (tracker == null) return Collections.emptyList();
@@ -92,7 +92,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionAuditLog")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static List<GqlAuditEntry> auditLog(
             @GraphQLName("limit") Integer limit) {
         AuditLogger audit = BundleUtils.getOsgiService(AuditLogger.class, null);
@@ -108,7 +108,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionBanActions")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static List<GqlBanActionInfo> banActions() {
         BruteForceTracker tracker = BundleUtils.getOsgiService(BruteForceTracker.class, null);
         if (tracker == null) return Collections.emptyList();
@@ -126,7 +126,7 @@ public class BruteForceLoginProtectionQueryExtension {
             + "given name has been registered. Lets clients (notably e2e tests) wait for "
             + "saveGlobalSettings/saveJail mutations to finish propagating before exercising "
             + "the ban path.")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static GqlConfigReadiness configReady(@GraphQLName("jail") String jail) {
         GlobalConfigHolder global = BundleUtils.getOsgiService(GlobalConfigHolder.class, null);
         JailConfigTracker tracker = BundleUtils.getOsgiService(JailConfigTracker.class, null);
@@ -137,7 +137,7 @@ public class BruteForceLoginProtectionQueryExtension {
 
     @GraphQLField
     @GraphQLName("bruteForceLoginProtectionClusterStatus")
-    @GraphQLRequiresPermission("admin")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
     public static GqlClusterStatus clusterStatus() {
         HazelcastInstanceManager hz = BundleUtils.getOsgiService(HazelcastInstanceManager.class, null);
         if (hz == null) return new GqlClusterStatus(false, 0);
