@@ -65,7 +65,9 @@ public class HazelcastInstanceManager implements Runnable {
 
     private ClassLoader classLoader;
     private HazelcastInstance hazelcastInstance;
-    private Set<String> discoveredMembers;
+    // Written from both @Activate and the discovery scheduler thread, read from both — volatile
+    // for safe publication of the latest member set.
+    private volatile Set<String> discoveredMembers;
 
     @Reference(service = DiscoveryService.class,
             policy = ReferencePolicy.DYNAMIC,
@@ -144,7 +146,16 @@ public class HazelcastInstanceManager implements Runnable {
     @Deactivate
     protected void destroy(BundleContext bundleContext) {
         logger.info("BFLP: shutting down");
-        scheduler.shutdown();
+        // Wait for the discovery task to finish so it cannot touch the Hazelcast instance or
+        // bundle classloader after they are torn down below.
+        scheduler.shutdownNow();
+        try {
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                logger.warn("BFLP: discovery scheduler did not terminate within 5s");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         try {
             bundleContext.removeBundleListener(flushClassLoaderCacheBundleListener);
         } catch (Exception e) {

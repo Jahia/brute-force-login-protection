@@ -70,8 +70,10 @@ public class AuditLogger {
                 // The periodic sweep in UnbanScheduler calls trimAuditLog() every 30 s.
                 // As a safety net, piggyback a trim every TRIM_WRITE_INTERVAL writes so the
                 // log stays bounded even under high load between sweeps.
-                if (writesSinceTrim.incrementAndGet() >= TRIM_WRITE_INTERVAL) {
-                    writesSinceTrim.set(0);
+                // CAS the reset so a concurrent write's increment isn't lost between the
+                // threshold check and the reset (which would delay the next piggyback trim).
+                long writes = writesSinceTrim.incrementAndGet();
+                if (writes >= TRIM_WRITE_INTERVAL && writesSinceTrim.compareAndSet(writes, 0)) {
                     trimIfNeeded(container);
                 }
                 return null;
