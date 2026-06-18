@@ -242,7 +242,12 @@ public class SettingsService {
         if (StringUtils.isBlank(name) || JailConfigTracker.isUnsafeJailName(name)) {
             return false;
         }
-        validateJailNumericFields(maxRetry, findTimeSeconds, banTimeSeconds);
+        try {
+            validateJailNumericFields(maxRetry, findTimeSeconds, banTimeSeconds);
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn("BFLP: rejected jail '{}' — {}", name, ex.getMessage());
+            return false;
+        }
         if (configurationAdmin == null) {
             LOGGER.error("BFLP: ConfigurationAdmin unavailable; cannot persist jail '{}'", name);
             return false;

@@ -71,6 +71,19 @@ public class RegexSafetyCheckTest {
     }
 
     @Test
+    public void escapedClosingParenFollowedByQuantifierAccepted() {
+        // \)+ matches a literal ')' character one or more times — not a group close.
+        // The preceding backslash escapes ')', so this must NOT be flagged as a nested quantifier.
+        assertThatCode(() -> RegexSafetyCheck.assertSafe("\\)+")).doesNotThrowAnyException();
+    }
+
+    @Test
+    public void escapedClosingParenInLargerPatternAccepted() {
+        // \d+\)? — one-or-more digits optionally followed by a literal ')'. Safe pattern.
+        assertThatCode(() -> RegexSafetyCheck.assertSafe("\\d+\\)?")).doesNotThrowAnyException();
+    }
+
+    @Test
     public void excessiveQuantifierDensityWithinGroupRejected() {
         assertThatThrownBy(() -> RegexSafetyCheck.assertSafe("(a+b*c+d*)"))
                 .isInstanceOf(IllegalArgumentException.class)

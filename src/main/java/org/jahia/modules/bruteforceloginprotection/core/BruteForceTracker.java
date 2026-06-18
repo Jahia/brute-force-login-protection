@@ -70,6 +70,9 @@ public class BruteForceTracker implements FailureRecorder {
     // Cache compiled Pattern objects so each distinct pattern string is compiled once rather
     // than on every login attempt. PatternSyntaxException entries are never cached (the compile
     // call is simply skipped and NOT_MATCHED is returned, exactly as before).
+    // Operator-configured patterns are typically few; 256 is a generous ceiling. When the cap is
+    // reached the whole cache is cleared (coarse but safe — entries are recompiled on next use).
+    private static final int MAX_COMPILED_PATTERN_CACHE = 256;
     private final ConcurrentHashMap<String, Pattern> compiledPatternCache = new ConcurrentHashMap<>();
 
     // Cache for the parsed whitelist CidrMatcher list. Recomputed only when the whitelist
@@ -570,7 +573,7 @@ public class BruteForceTracker implements FailureRecorder {
             }
         }
         List<CidrMatcher> immutable = Collections.unmodifiableList(matchers);
-        whitelistCache.set(new WhitelistCache(whitelist, immutable));
+        whitelistCache.compareAndSet(cache, new WhitelistCache(whitelist, immutable));
         return immutable;
     }
 
@@ -623,6 +626,9 @@ public class BruteForceTracker implements FailureRecorder {
         }
         try {
             Pattern compiled = Pattern.compile(p);
+            if (compiledPatternCache.size() >= MAX_COMPILED_PATTERN_CACHE) {
+                compiledPatternCache.clear();
+            }
             compiledPatternCache.putIfAbsent(p, compiled);
             return compiledPatternCache.get(p);
         } catch (PatternSyntaxException e) {

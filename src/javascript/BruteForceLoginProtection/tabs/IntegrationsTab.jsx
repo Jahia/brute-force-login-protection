@@ -71,24 +71,31 @@ export const IntegrationsTab = () => {
         }
     };
 
+    // F-01/F-02: build the full set of current global settings so that saving
+    // the integration fields never resets unrelated settings to null. Shared by
+    // both save paths (handleSubmit + handleClearSecretConfirm) so they stay
+    // identical. trustedProxyCidrs is included so it is not dropped on save.
+    const buildBaseSettings = () => {
+        const current = data?.bruteForceLoginProtectionGlobalSettings || {};
+        return {
+            activated: current.activated,
+            whitelistIps: current.whitelistIps ?? '',
+            ignorePatterns: current.ignorePatterns || [],
+            trustProxyHeader: current.trustProxyHeader,
+            trustedProxyCidrs: current.trustedProxyCidrs || [],
+            recidiveFactor: current.recidiveFactor,
+            maxBanTimeSeconds: current.maxBanTimeSeconds,
+            auditLogMaxEntries: current.auditLogMaxEntries,
+            emailEnabled: form.emailEnabled,
+            emailRecipient: form.emailRecipient,
+            webhookUrl: form.webhookUrl
+        };
+    };
+
     const handleSubmit = async e => {
         e.preventDefault();
         try {
-            // F-01: merge the current values of unrelated settings so saving the
-            // integration fields does not reset activated/trustProxyHeader/etc.
-            const current = data?.bruteForceLoginProtectionGlobalSettings || {};
-            const variables = {
-                activated: current.activated,
-                whitelistIps: current.whitelistIps ?? '',
-                ignorePatterns: current.ignorePatterns || [],
-                trustProxyHeader: current.trustProxyHeader,
-                recidiveFactor: current.recidiveFactor,
-                maxBanTimeSeconds: current.maxBanTimeSeconds,
-                auditLogMaxEntries: current.auditLogMaxEntries,
-                emailEnabled: form.emailEnabled,
-                emailRecipient: form.emailRecipient,
-                webhookUrl: form.webhookUrl
-            };
+            const variables = buildBaseSettings();
             if (form.webhookSecret) {
                 variables.webhookSecret = form.webhookSecret;
             }
@@ -114,7 +121,11 @@ export const IntegrationsTab = () => {
     const handleClearSecretConfirm = async () => {
         setConfirmClearSecret(false);
         try {
-            const r = await saveSettings({variables: {webhookSecret: ''}});
+            // F-01: merge ALL current settings (same shape as handleSubmit) and
+            // only override webhookSecret with '' to clear it — sending just
+            // webhookSecret would clobber every other setting to undefined.
+            const variables = {...buildBaseSettings(), webhookSecret: ''};
+            const r = await saveSettings({variables});
             if (r.data?.bruteForceLoginProtectionSaveGlobalSettings) {
                 setStatus('success');
                 setSecretConfigured(false);

@@ -1,6 +1,5 @@
 package org.jahia.modules.bruteforceloginprotection.core;
 
-import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
@@ -255,7 +254,19 @@ public class AuditLogger {
     }
 
     public static String sanitize(String s) {
-        return s == null ? null : StringUtils.replaceEach(s, new String[]{"\r", "\n"}, new String[]{"", ""});
+        if (s == null) {
+            return null;
+        }
+        // Strip all ISO control characters (U+0000–U+001F and U+007F) so NUL, tab,
+        // vertical-tab, etc. cannot reach JCR properties or the admin UI, not just CR/LF.
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!Character.isISOControl(c)) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     public static class AuditEntry {
