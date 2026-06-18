@@ -58,7 +58,7 @@ export const BruteForceLoginProtectionAdmin = () => {
 
     // F-18: Arrow-key + Home/End roving-tabindex navigation
     const handleTabKeyDown = useCallback(e => {
-        let next = activeIndex;
+        let next;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
             e.preventDefault();
             next = (activeIndex + 1) % TABS.length;
