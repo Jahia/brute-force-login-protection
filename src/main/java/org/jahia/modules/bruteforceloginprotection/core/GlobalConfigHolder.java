@@ -122,14 +122,14 @@ public class GlobalConfigHolder implements ManagedService {
     private static boolean boolProp(Dictionary<String, ?> d, String key, boolean def) {
         Object v = d.get(key);
         if (v == null) return def;
-        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof Boolean b) return b;
         return Boolean.parseBoolean(String.valueOf(v).trim());
     }
 
     private static long longProp(Dictionary<String, ?> d, String key, long def) {
         Object v = d.get(key);
         if (v == null) return def;
-        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof Number n) return n.longValue();
         try {
             return Long.parseLong(String.valueOf(v).trim());
         } catch (NumberFormatException e) {
@@ -140,7 +140,7 @@ public class GlobalConfigHolder implements ManagedService {
     private static double doubleProp(Dictionary<String, ?> d, String key, double def) {
         Object v = d.get(key);
         if (v == null) return def;
-        if (v instanceof Number) return ((Number) v).doubleValue();
+        if (v instanceof Number n) return n.doubleValue();
         try {
             return Double.parseDouble(String.valueOf(v).trim());
         } catch (NumberFormatException e) {
@@ -163,11 +163,11 @@ public class GlobalConfigHolder implements ManagedService {
         if (v == null) {
             return Collections.emptyList();
         }
-        if (v instanceof String[]) {
-            return collectNonBlank((String[]) v);
+        if (v instanceof String[] arr) {
+            return collectNonBlank(arr);
         }
-        if (v instanceof Iterable<?>) {
-            return collectNonBlankIterable((Iterable<?>) v);
+        if (v instanceof Iterable<?> iterable) {
+            return collectNonBlankIterable(iterable);
         }
         return collectNonBlank(String.valueOf(v).split(","));
     }

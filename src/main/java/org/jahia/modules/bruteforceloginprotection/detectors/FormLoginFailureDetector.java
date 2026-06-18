@@ -28,6 +28,9 @@ public class FormLoginFailureDetector implements AuthFailureDetector {
                 && !LoginEngineAuthValveImpl.UNKNOWN_USER.equals(result)) {
             return null;
         }
+        // Pass the raw username unchanged so audit logs preserve the original case. Normalization
+        // for ignore-pattern matching happens centrally in BruteForceTracker.matchesIgnorePattern,
+        // keeping matching consistent across all auth methods without lowercasing the audit trail.
         return FailureSignal.builder(BruteForceLoginProtectionConstants.DEFAULT_JAIL_LOGIN)
                 .username(request.getParameter("username"))
                 .extra("result", String.valueOf(result))

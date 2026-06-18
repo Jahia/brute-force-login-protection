@@ -4,7 +4,7 @@ Jahia OSGi module that detects brute-force login attempts and bans offending IPs
 
 ## Key Facts
 
-- **artifactId**: `brute-force-login-protection` | **version**: `3.0.0-SNAPSHOT`
+- **artifactId**: `brute-force-login-protection` | **version**: `3.0.2-SNAPSHOT`
 - **Java package**: `org.jahia.modules.bruteforceloginprotection`
 - **jahia-depends**: `default,graphql-dxm-provider,serverSettings`
 - **No Blueprint/Spring** — pure OSGi DS (`@Component` annotations only)

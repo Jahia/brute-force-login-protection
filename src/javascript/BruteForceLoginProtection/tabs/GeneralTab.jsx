@@ -24,6 +24,7 @@ export const GeneralTab = () => {
     const whitelistRef = useRef(null);
     const recidiveRef = useRef(null);
     const maxBanRef = useRef(null);
+    const auditMaxRef = useRef(null);
     const [form, setForm] = useState(DEFAULTS);
 
     const {loading} = useQuery(GET_GLOBAL_SETTINGS, {
@@ -62,6 +63,12 @@ export const GeneralTab = () => {
             next.maxBanTimeSeconds = t('general.maxBanTimeSecondsInvalid');
         }
 
+        // F-10: bounds + error path for auditLogMaxEntries
+        const auditVal = Number(form.auditLogMaxEntries);
+        if (!(Number.isInteger(auditVal) && auditVal >= 1 && auditVal <= 100000)) {
+            next.auditLogMaxEntries = t('general.auditLogMaxEntriesInvalid');
+        }
+
         setErrors(next);
         if (next.whitelistIps) {
             whitelistRef.current?.focus();
@@ -69,6 +76,8 @@ export const GeneralTab = () => {
             recidiveRef.current?.focus();
         } else if (next.maxBanTimeSeconds) {
             maxBanRef.current?.focus();
+        } else if (next.auditLogMaxEntries) {
+            auditMaxRef.current?.focus();
         }
 
         return Object.keys(next).length === 0;
@@ -113,7 +122,7 @@ export const GeneralTab = () => {
     }
 
     return (
-        <form onSubmit={handleSubmit} className={styles.bflp_tabPanel}>
+        <form className={styles.bflp_tabPanel} onSubmit={handleSubmit}>
             <div className={styles.bflp_sectionHeader}>
                 <h3>{t('general.title')}</h3>
             </div>
@@ -249,14 +258,20 @@ export const GeneralTab = () => {
                         {t('general.auditLogMaxEntriesHint')}
                     </p>
                     <input
+                        ref={auditMaxRef}
                         type="number"
                         id="bflp-gen-auditmax"
                         className={styles.bflp_input}
                         min="1"
-                        aria-describedby="bflp-gen-auditmax-hint"
+                        max="100000"
+                        aria-describedby={`bflp-gen-auditmax-hint${errors.auditLogMaxEntries ? ' bflp-gen-auditmax-error' : ''}`}
+                        aria-invalid={errors.auditLogMaxEntries ? 'true' : undefined}
                         value={form.auditLogMaxEntries}
                         onChange={e => setForm(prev => ({...prev, auditLogMaxEntries: e.target.value}))}
                     />
+                    <p id="bflp-gen-auditmax-error" className={styles.bflp_fieldError} aria-live="polite" aria-atomic="true">
+                        {errors.auditLogMaxEntries || ''}
+                    </p>
                 </div>
             </div>
 

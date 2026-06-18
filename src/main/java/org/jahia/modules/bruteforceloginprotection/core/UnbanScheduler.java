@@ -12,10 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -56,27 +54,30 @@ public class UnbanScheduler {
     }
 
     public void sweep() {
-        // scheduleWithFixedDelay permanently cancels the task if its run throws, so this method must
-        // never propagate anything — catch Throwable (not just Exception) around the ENTIRE body,
-        // including the audit-log trim, so a transient failure only skips one interval.
+        // scheduleWithFixedDelay permanently cancels the task if its run throws ANY Throwable, so
+        // this method must never let one escape — a single uncaught error (even from a third-party
+        // BanAction) would silently kill the unban sweep for the JVM's lifetime. Catch Throwable
+        // around the ENTIRE body, including the audit-log trim, so a failure only skips one interval.
         try {
             HazelcastInstance hz = hazelcastManager.getHazelcastInstance();
             if (hz != null && hazelcastManager.isRunning()) {
                 IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
                 long now = System.currentTimeMillis();
-                Set<String> toRemove = new HashSet<>();
                 List<BannedIp> expired = new ArrayList<>();
                 // Iterate a snapshot so a concurrent unbanIp()/eviction cannot make us skip an entry
-                // mid-iteration (and so each expiry dispatches its unban actions exactly once).
+                // mid-iteration. Only dispatch the unban actions for an entry that THIS sweep
+                // actually removed (bans.remove(key) != null): a concurrent manual unbanIp() or
+                // Hazelcast TTL eviction may have already removed it and dispatched onUnban, so
+                // guarding on the remove result prevents a duplicate dispatch.
                 for (Map.Entry<String, BannedIp> e : new ArrayList<>(bans.entrySet())) {
                     BannedIp b = e.getValue();
-                    if (b != null && b.isExpired(now)) {
-                        toRemove.add(e.getKey());
+                    // Value-checked remove: a concurrent re-ban could install a fresh (non-expired)
+                    // BannedIp under the same key between our snapshot read and this remove. The
+                    // value-less remove(key) would silently drop that fresh ban; remove(key, b)
+                    // only deletes when the entry is STILL the expired one we observed.
+                    if (b != null && b.isExpired(now) && bans.remove(e.getKey(), b)) {
                         expired.add(b);
                     }
-                }
-                for (String key : toRemove) {
-                    bans.remove(key);
                 }
                 for (BannedIp b : expired) {
                     tracker.removeBanFromJcr(b.getIp());
@@ -96,7 +97,7 @@ public class UnbanScheduler {
             // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
             // on the hot login-failure recording path).
             auditLogger.trimAuditLog();
-        } catch (Throwable t) {
+        } catch (Throwable t) { // NOSONAR S1181: scheduleWithFixedDelay cancels the task on any escaping Throwable; we must swallow it so the recurring sweep survives.
             LOGGER.error("BFLP: unban sweep failed; will retry on next interval", t);
         }
     }

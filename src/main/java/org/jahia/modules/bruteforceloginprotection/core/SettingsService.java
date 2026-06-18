@@ -265,7 +265,7 @@ public class SettingsService {
             cfg.update(props);
             return true;
         } catch (IOException | InvalidSyntaxException e) {
-            LOGGER.error("BFLP: error saving jail '{}'", sanitize(name), e);
+            LOGGER.error("BFLP: error saving jail '{}'", AuditLogger.sanitize(name), e);
             return false;
         }
     }
@@ -284,7 +284,7 @@ public class SettingsService {
             }
             return true;
         } catch (IOException | InvalidSyntaxException e) {
-            LOGGER.error("BFLP: error deleting jail '{}'", sanitize(name), e);
+            LOGGER.error("BFLP: error deleting jail '{}'", AuditLogger.sanitize(name), e);
             return false;
         }
     }
@@ -360,9 +360,5 @@ public class SettingsService {
 
     public JCRTemplate getJcrTemplate() {
         return jcrTemplate;
-    }
-
-    private static String sanitize(String s) {
-        return s == null ? null : s.replaceAll("[\r\n]", "");
     }
 }

@@ -1,5 +1,6 @@
 package org.jahia.modules.bruteforceloginprotection.actions;
 
+import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.BanContext;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
 import org.osgi.service.component.annotations.Component;
@@ -7,8 +8,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Default sentinel BanAction. Always-on. The actual valve-side block is done by
- * AuthValveFailureSource consulting FailureRecorder.isIpCurrentlyBanned.
+ * Default sentinel {@link BanAction} (priority {@code 0}), always registered. This action does
+ * <strong>not</strong> perform the block itself — despite its name it only logs the ban/unban
+ * event. The actual enforcement is done by {@code AuthValveFailureSource} consulting
+ * {@code FailureRecorder.isIpCurrentlyBanned} on every request; the ban entry it reads is written
+ * into the distributed map by {@code BruteForceTracker} when the ban is issued.
  */
 @Component(immediate = true, service = BanAction.class)
 public class InProcessBlockAction implements BanAction {
@@ -29,7 +33,7 @@ public class InProcessBlockAction implements BanAction {
     public void onBan(BanContext context) {
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("BFLP: IP {} banned (jail={}, banCount={}, until={})",
-                    sanitize(context.getIp()), sanitize(context.getJailName()),
+                    AuditLogger.sanitize(context.getIp()), AuditLogger.sanitize(context.getJailName()),
                     context.getBanCount(), context.getBannedUntil());
         }
     }
@@ -38,11 +42,7 @@ public class InProcessBlockAction implements BanAction {
     public void onUnban(BanContext context) {
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("BFLP: IP {} unbanned (jail={})",
-                    sanitize(context.getIp()), sanitize(context.getJailName()));
+                    AuditLogger.sanitize(context.getIp()), AuditLogger.sanitize(context.getJailName()));
         }
-    }
-
-    private static String sanitize(String s) {
-        return s == null ? null : s.replaceAll("[\r\n]", "");
     }
 }

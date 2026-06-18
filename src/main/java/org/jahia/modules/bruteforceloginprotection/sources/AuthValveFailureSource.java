@@ -3,6 +3,7 @@ package org.jahia.modules.bruteforceloginprotection.sources;
 import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
+import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.spi.AuthFailureContext;
@@ -113,7 +114,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
 
         if (remoteAddress != null && failureRecorder != null && failureRecorder.isIpCurrentlyBanned(remoteAddress)) {
             if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("BFLP: Blocked auth attempt from banned IP {}", sanitize(remoteAddress));
+                LOGGER.info("BFLP: Blocked auth attempt from banned IP {}", AuditLogger.sanitize(remoteAddress));
             }
             request.setAttribute(LoginEngineAuthValveImpl.VALVE_RESULT, LoginEngineAuthValveImpl.BAD_PASSWORD);
             return;
@@ -286,9 +287,5 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     /** Visible for testing. */
     List<AuthFailureDetector> getDetectorsSnapshot() {
         return Collections.unmodifiableList(new ArrayList<>(detectors));
-    }
-
-    private static String sanitize(String value) {
-        return value == null ? null : value.replaceAll("[\r\n]", "");
     }
 }

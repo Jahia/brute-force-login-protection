@@ -31,8 +31,11 @@ public final class WebhookSecretCodec {
         try {
             return ENC_PREFIX + EncryptionUtils.passwordBaseEncrypt(plain);
         } catch (Exception e) {
-            LOGGER.error("BFLP: failed to encrypt webhookSecret — refusing to persist plaintext: {}", e.getMessage());
-            throw new IllegalStateException("BFLP: webhookSecret encryption failed", e);
+            // Rethrow with context (preserving the cause) instead of logging-and-rethrowing:
+            // callers must NOT persist the secret when this throws (that would store plaintext),
+            // and the wrapping exception carries everything the caller needs to log once.
+            throw new IllegalStateException(
+                    "BFLP: webhookSecret encryption failed — refusing to persist plaintext", e);
         }
     }
 

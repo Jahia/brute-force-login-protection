@@ -4,7 +4,6 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
-import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.modules.bruteforceloginprotection.CidrMatcher;
 import org.jahia.modules.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
@@ -12,6 +11,7 @@ import org.jahia.modules.bruteforceloginprotection.spi.FailureEvent;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureRecorder;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
+import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
@@ -55,21 +55,14 @@ public class BruteForceTracker implements FailureRecorder {
     private static final int IGNORE_PATTERN_POOL_SIZE =
             Math.max(2, Runtime.getRuntime().availableProcessors());
     private static final int IGNORE_PATTERN_QUEUE_CAPACITY = 256;
-    private static final ExecutorService IGNORE_PATTERN_EXECUTOR =
-            new ThreadPoolExecutor(IGNORE_PATTERN_POOL_SIZE, IGNORE_PATTERN_POOL_SIZE,
-                    30L, TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(IGNORE_PATTERN_QUEUE_CAPACITY),
-                    r -> {
-                        Thread t = new Thread(r, "bflp-regex-matcher");
-                        t.setDaemon(true);
-                        return t;
-                    },
-                    new ThreadPoolExecutor.AbortPolicy());
-    static {
-        ((ThreadPoolExecutor) IGNORE_PATTERN_EXECUTOR).allowCoreThreadTimeOut(true);
-    }
-    private static final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
-    private static final AtomicLong lastHazelcastDownWarnMs = new AtomicLong(0L);
+
+    // Created in @Activate and shut down in @Deactivate so a bundle refresh never leaves
+    // submissions hitting a terminated pool (which would fail-closed and silently skip all
+    // ignore patterns). Instance state, not static, so the lifecycle is bound to the component.
+    private ExecutorService ignorePatternExecutor;
+    private final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
+    // Throttles the fail-open ERROR alert emitted when Hazelcast is unavailable (gates an ERROR, not a WARN).
+    private final AtomicLong lastHazelcastDownAlertMs = new AtomicLong(0L);
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -98,9 +91,108 @@ public class BruteForceTracker implements FailureRecorder {
         banActions.remove(action);
     }
 
+    @Activate
+    public void activate() {
+        ThreadPoolExecutor exec = new ThreadPoolExecutor(IGNORE_PATTERN_POOL_SIZE, IGNORE_PATTERN_POOL_SIZE,
+                30L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(IGNORE_PATTERN_QUEUE_CAPACITY),
+                r -> {
+                    Thread t = new Thread(r, "bflp-regex-matcher");
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
+        exec.allowCoreThreadTimeOut(true);
+        this.ignorePatternExecutor = exec;
+        reconcileJcrBansOnStartup();
+    }
+
     @Deactivate
     public void deactivate() {
-        IGNORE_PATTERN_EXECUTOR.shutdownNow();
+        if (ignorePatternExecutor != null) {
+            // Give in-flight (interruptible, <=50ms) matches a brief grace period before forcing
+            // shutdown, mirroring WebhookBanAction.deactivate for consistency.
+            ignorePatternExecutor.shutdown();
+            try {
+                if (!ignorePatternExecutor.awaitTermination(100L, TimeUnit.MILLISECONDS)) {
+                    ignorePatternExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                ignorePatternExecutor.shutdownNow();
+            }
+        }
+    }
+
+    /**
+     * Startup reconciliation between the (authoritative) Hazelcast ban map and the best-effort JCR
+     * mirror. JCR ban nodes whose {@code banned_until} is already in the past are dropped rather
+     * than left to be resurrected as active bans; live bans whose Hazelcast TTL did not survive a
+     * full cluster restart are restored into the map. Best-effort: any failure is logged and
+     * swallowed so a JCR hiccup never blocks component activation.
+     */
+    private void reconcileJcrBansOnStartup() {
+        HazelcastInstance hz = hazelcastInstance();
+        if (hz == null || !hz.getLifecycleService().isRunning()) {
+            // Without a running Hazelcast we can neither restore live bans nor safely decide which
+            // JCR mirrors are stale. Do NOT mutate JCR here: deleting nodes now would permanently
+            // lose live bans (the in-memory map can't be repopulated). Bail out so a later
+            // reconciliation (once Hazelcast is up) can do the full job.
+            LOGGER.warn("BFLP: Hazelcast not running at startup; skipping JCR ban reconciliation (will be reconciled later)");
+            return;
+        }
+        IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
+        try {
+            jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
+                if (!session.nodeExists(BANS_NODE_PATH)) {
+                    return null;
+                }
+                long now = System.currentTimeMillis();
+                javax.jcr.NodeIterator it = session.getNode(BANS_NODE_PATH).getNodes();
+                // Collect stale nodes first; removing while iterating the live NodeIterator can
+                // corrupt iteration. We delete them only after the iterator is exhausted.
+                List<JCRNodeWrapper> stale = new ArrayList<>();
+                while (it.hasNext()) {
+                    JCRNodeWrapper node = (JCRNodeWrapper) it.nextNode();
+                    long until = node.hasProperty(PROP_BAN_UNTIL) ? node.getProperty(PROP_BAN_UNTIL).getLong() : 0L;
+                    if (until > 0 && until <= now) {
+                        // Stale: TTL already elapsed. Drop it so it is not rehydrated as active.
+                        stale.add(node);
+                    } else {
+                        // Live ban: restore into the in-memory map if it didn't survive restart.
+                        restoreLiveBan(bans, node, until, now);
+                    }
+                }
+                if (!stale.isEmpty()) {
+                    for (JCRNodeWrapper node : stale) {
+                        node.remove();
+                    }
+                    session.save();
+                }
+                return null;
+            });
+        } catch (RepositoryException | RuntimeException e) {
+            // Broad catch (incl. unchecked exceptions from the JCR lambda) so a reconciliation
+            // hiccup can never escape @Activate and disable the whole component.
+            LOGGER.warn("BFLP: startup ban reconciliation failed: {}", e.getMessage());
+        }
+    }
+
+    private static void restoreLiveBan(IMap<String, BannedIp> bans, JCRNodeWrapper node, long until, long now)
+            throws RepositoryException {
+        String ip = node.hasProperty(PROP_BAN_IP) ? node.getProperty(PROP_BAN_IP).getString() : null;
+        if (ip == null || bans.containsKey(ip)) {
+            return;
+        }
+        BannedIp restored = new BannedIp(ip,
+                node.hasProperty(PROP_BAN_JAIL) ? node.getProperty(PROP_BAN_JAIL).getString() : null,
+                node.hasProperty(PROP_BAN_SOURCE) ? node.getProperty(PROP_BAN_SOURCE).getString() : null,
+                node.hasProperty(PROP_BAN_AT) ? node.getProperty(PROP_BAN_AT).getLong() : now,
+                until,
+                node.hasProperty(PROP_BAN_COUNT) ? (int) node.getProperty(PROP_BAN_COUNT).getLong() : 1,
+                node.hasProperty(PROP_BAN_REASON) ? node.getProperty(PROP_BAN_REASON).getString() : null);
+        long ttlSec = Math.max(1L, (until - now) / 1000L);
+        bans.putIfAbsent(ip, restored, ttlSec, TimeUnit.SECONDS);
     }
 
     public List<BanAction> getBanActions() {
@@ -178,11 +270,14 @@ public class BruteForceTracker implements FailureRecorder {
         String ip = event.getIp();
         BannedIp banned = null;
         long banSec = 0L;
+        // Read the JCR-mirrored ban count once: it only matters when the in-memory entry is absent,
+        // and re-reading it inside the CAS loop would issue a JCR read per retry on the hot path.
+        int jcrBanCount = readBanCountFromJcr(ip);
         // CAS loop: atomically compute the next ban from the current map state so concurrent
         // ban triggers on the same IP can't both observe banCount=N and both write N+1.
         for (int attempt = 0; attempt < CAS_MAX_RETRIES; attempt++) {
             BannedIp existing = bans.get(ip);
-            int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
+            int prevCount = (existing != null) ? existing.getBanCount() : jcrBanCount;
             banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
                     settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
             long bannedUntil = now + banSec * 1000L;
@@ -206,6 +301,9 @@ public class BruteForceTracker implements FailureRecorder {
                         AuditLogger.sanitize(ip), CAS_MAX_RETRIES);
             }
             BannedIp existing = bans.get(ip);
+            // Re-read the recidive base here rather than reusing the pre-loop jcrBanCount: after a
+            // full CAS exhaustion the map state has changed, so the pre-loop value may be stale and
+            // would under-count the recidive escalation.
             int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
             banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
                     settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
@@ -256,7 +354,9 @@ public class BruteForceTracker implements FailureRecorder {
             // Manual bans (GraphQL/Karaf) must be IP literals: a hostname or garbage value would be
             // stored as a map/JCR key, could trigger DNS resolution on the ban-check path, and would
             // never match a real client address. Reject it at the boundary.
-            LOGGER.warn("BFLP: refusing manual ban of non-IP value '{}'", AuditLogger.sanitize(ip));
+            if (LOGGER.isWarnEnabled()) {
+                LOGGER.warn("BFLP: refusing manual ban of non-IP value '{}'", AuditLogger.sanitize(ip));
+            }
             return false;
         }
         HazelcastInstance hz = hazelcastInstance();
@@ -362,9 +462,11 @@ public class BruteForceTracker implements FailureRecorder {
         // throttled WARN so operators notice the protection gap without flooding the log.
         if (hz == null || !hz.getLifecycleService().isRunning()) {
             long nowMs = System.currentTimeMillis();
-            long last = lastHazelcastDownWarnMs.get();
-            if (nowMs - last > IGNORE_PATTERN_WARN_THROTTLE_MS && lastHazelcastDownWarnMs.compareAndSet(last, nowMs)) {
-                LOGGER.warn("BFLP: Hazelcast unavailable; ban enforcement temporarily disabled (fail-open)");
+            long last = lastHazelcastDownAlertMs.get();
+            if (nowMs - last > IGNORE_PATTERN_WARN_THROTTLE_MS && lastHazelcastDownAlertMs.compareAndSet(last, nowMs)) {
+                // Alertable ERROR: while the distributed ban store is down, NO ban is enforced
+                // (fail-open). Operators must treat this as a protection outage, not noise.
+                LOGGER.error("BFLP: Hazelcast unavailable; ban enforcement DISABLED cluster-wide (fail-open) - all logins permitted until it recovers");
             }
             return false;
         }
@@ -375,8 +477,12 @@ public class BruteForceTracker implements FailureRecorder {
         }
         long now = System.currentTimeMillis();
         if (banned.isExpired(now)) {
-            bans.remove(ip);
-            removeBanFromJcr(ip);
+            // Only touch JCR if THIS request actually removed the expired entry, so the
+            // per-request hot path doesn't issue a JCR write on every hit for an already-removed
+            // ban. The UnbanScheduler sweep is the primary cleanup path; this is a backstop.
+            if (bans.remove(ip) != null) {
+                removeBanFromJcr(ip);
+            }
             return false;
         }
         return true;
@@ -420,10 +526,14 @@ public class BruteForceTracker implements FailureRecorder {
         return false;
     }
 
-    private static boolean matchesIgnorePattern(String username, List<String> patterns) {
-        if (username == null || patterns == null || patterns.isEmpty()) {
+    private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {
+        if (rawUsername == null || patterns == null || patterns.isEmpty()) {
             return false;
         }
+        // Normalize ONLY for matching (trim + lower-case), consistently for every auth method, so
+        // case/whitespace variants of an allowlisted account ("Admin", " admin ") cannot bypass an
+        // operator's ignorePatterns. The original-case username is still recorded in the audit log.
+        String username = rawUsername.trim().toLowerCase(java.util.Locale.ROOT);
         for (String p : patterns) {
             IgnorePatternResult result = evaluateIgnorePattern(username, p);
             if (result == IgnorePatternResult.MATCHED) {
@@ -438,7 +548,7 @@ public class BruteForceTracker implements FailureRecorder {
 
     private enum IgnorePatternResult { MATCHED, NOT_MATCHED, INTERRUPTED }
 
-    private static IgnorePatternResult evaluateIgnorePattern(String username, String p) {
+    private IgnorePatternResult evaluateIgnorePattern(String username, String p) {
         if (StringUtils.isBlank(p)) {
             return IgnorePatternResult.NOT_MATCHED;
         }
@@ -449,11 +559,18 @@ public class BruteForceTracker implements FailureRecorder {
             LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
             return IgnorePatternResult.NOT_MATCHED;
         }
+        // During/after @Deactivate the executor is shut down. submit() would then throw
+        // RejectedExecutionException, which the catch below treats as fail-closed (MATCHED) and
+        // would silently stop ALL failure recording. A torn-down component must fail OPEN, so
+        // ignore-pattern matching is skipped (NOT_MATCHED) and the failure is still recorded.
+        if (ignorePatternExecutor == null || ignorePatternExecutor.isShutdown()) {
+            return IgnorePatternResult.NOT_MATCHED;
+        }
         final Future<Boolean> future;
         try {
             // Wrap the input so a cancel(true) interrupt actually aborts catastrophic backtracking:
             // Matcher polls charAt(), and InterruptibleCharSequence throws on an interrupted thread.
-            future = IGNORE_PATTERN_EXECUTOR.submit(
+            future = ignorePatternExecutor.submit(
                     () -> compiled.matcher(new InterruptibleCharSequence(username)).matches());
         } catch (RejectedExecutionException ree) {
             // Pool + queue saturated (likely a ReDoS-style flood). Fail closed, like a timeout.
@@ -482,7 +599,7 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
-    private static void warnIgnorePatternTimeout(String p) {
+    private void warnIgnorePatternTimeout(String p) {
         long now = System.currentTimeMillis();
         long last = lastIgnorePatternTimeoutWarnMs.get();
         if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
@@ -604,7 +721,4 @@ public class BruteForceTracker implements FailureRecorder {
         }
         return new HashMap<>(hz.<String, Object>getMap(MAP_NOTIFICATION_MARKERS));
     }
-
-    // expose constant for callers
-    public static final String CONST_REF = BruteForceLoginProtectionConstants.MAP_BANS;
 }

@@ -134,13 +134,13 @@ public class JailConfigTracker implements ManagedServiceFactory {
 
     private static boolean asBool(Object v, boolean def) {
         if (v == null) return def;
-        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof Boolean b) return b;
         return Boolean.parseBoolean(String.valueOf(v).trim());
     }
 
     private static long asLong(Object v, long def) {
         if (v == null) return def;
-        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof Number n) return n.longValue();
         try {
             return Long.parseLong(String.valueOf(v).trim());
         } catch (NumberFormatException e) {

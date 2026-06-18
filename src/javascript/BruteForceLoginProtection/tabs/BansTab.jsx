@@ -78,62 +78,83 @@ export const BansTab = () => {
         <div className={styles.bflp_tabPanel}>
             <div className={styles.bflp_subSection}>
                 <h3>{t('bans.banAnIp')}</h3>
-                <form onSubmit={handleBan} className={styles.bflp_form}>
-                    <div className={styles.bflp_fieldRow}>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-ban-ip">{t('bans.ip')}</label>
-                            <input
-                                id="bflp-ban-ip"
-                                type="text"
-                                className={styles.bflp_input}
-                                value={banForm.ip}
-                                aria-invalid={banFormError ? 'true' : undefined}
-                                aria-describedby={banFormError ? 'bflp-ban-ip-error' : undefined}
-                                onChange={e => setBanForm(prev => ({...prev, ip: e.target.value}))}
-                            />
+                {/* F-09: fieldset/legend grouping; aria-label on form */}
+                <form
+                    aria-label={t('bans.banAnIp')}
+                    className={styles.bflp_form}
+                    onSubmit={handleBan}
+                >
+                    <fieldset className={styles.bflp_fieldset}>
+                        <legend className={styles.bflp_fieldsetLegend}>{t('bans.banFormLegend')}</legend>
+                        <div className={styles.bflp_fieldRow}>
+                            <div className={styles.bflp_fieldGroup}>
+                                {/* F-04: required + aria-required + visible indicator */}
+                                <label className={styles.bflp_label} htmlFor="bflp-ban-ip">
+                                    {t('bans.ip')}
+                                    <span aria-hidden="true" className={styles.bflp_required}>*</span>
+                                </label>
+                                <input
+                                    required
+                                    aria-describedby={banFormError ? 'bflp-ban-ip-error' : undefined}
+                                    aria-invalid={banFormError ? 'true' : undefined}
+                                    aria-required="true"
+                                    className={styles.bflp_input}
+                                    id="bflp-ban-ip"
+                                    type="text"
+                                    value={banForm.ip}
+                                    onChange={e => setBanForm(prev => ({...prev, ip: e.target.value}))}
+                                />
+                            </div>
+                            <div className={styles.bflp_fieldGroup}>
+                                <label className={styles.bflp_label} htmlFor="bflp-ban-jail">{t('bans.jail')}</label>
+                                <input
+                                    className={styles.bflp_input}
+                                    id="bflp-ban-jail"
+                                    type="text"
+                                    value={banForm.jail}
+                                    onChange={e => setBanForm(prev => ({...prev, jail: e.target.value}))}
+                                />
+                            </div>
+                            <div className={styles.bflp_fieldGroup}>
+                                <label className={styles.bflp_label} htmlFor="bflp-ban-duration">{t('bans.durationSeconds')}</label>
+                                <input
+                                    className={styles.bflp_input}
+                                    id="bflp-ban-duration"
+                                    min="1"
+                                    type="number"
+                                    value={banForm.durationSeconds}
+                                    onChange={e => setBanForm(prev => ({...prev, durationSeconds: e.target.value}))}
+                                />
+                            </div>
+                            <div className={styles.bflp_fieldGroup} style={{flex: 1, minWidth: 220}}>
+                                <label className={styles.bflp_label} htmlFor="bflp-ban-reason">{t('bans.reason')}</label>
+                                <input
+                                    className={`${styles.bflp_input} ${styles['bflp_input--wide']}`}
+                                    id="bflp-ban-reason"
+                                    type="text"
+                                    value={banForm.reason}
+                                    onChange={e => setBanForm(prev => ({...prev, reason: e.target.value}))}
+                                />
+                            </div>
                         </div>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-ban-jail">{t('bans.jail')}</label>
-                            <input
-                                id="bflp-ban-jail"
-                                type="text"
-                                className={styles.bflp_input}
-                                value={banForm.jail}
-                                onChange={e => setBanForm(prev => ({...prev, jail: e.target.value}))}
-                            />
-                        </div>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-ban-duration">{t('bans.durationSeconds')}</label>
-                            <input
-                                id="bflp-ban-duration"
-                                type="number"
-                                min="1"
-                                className={styles.bflp_input}
-                                value={banForm.durationSeconds}
-                                onChange={e => setBanForm(prev => ({...prev, durationSeconds: e.target.value}))}
-                            />
-                        </div>
-                        <div className={styles.bflp_fieldGroup} style={{flex: 1, minWidth: 220}}>
-                            <label className={styles.bflp_label} htmlFor="bflp-ban-reason">{t('bans.reason')}</label>
-                            <input
-                                id="bflp-ban-reason"
-                                type="text"
-                                className={`${styles.bflp_input} ${styles['bflp_input--wide']}`}
-                                value={banForm.reason}
-                                onChange={e => setBanForm(prev => ({...prev, reason: e.target.value}))}
-                            />
-                        </div>
-                    </div>
-                    <p id="bflp-ban-ip-error" className={styles.bflp_fieldError} aria-live="polite" aria-atomic="true">
+                    </fieldset>
+                    {/* F-22/F-25/F-26: always-present error node (pre-rendered) */}
+                    <p
+                        aria-atomic="true"
+                        aria-live="polite"
+                        className={styles.bflp_fieldError}
+                        id="bflp-ban-ip-error"
+                    >
                         {banFormError || ''}
                     </p>
+                    {/* F-22/F-25/F-26: pre-rendered live regions */}
                     <StatusAlerts status={status}/>
                     <div className={styles.bflp_inlineActions}>
                         <Button
-                            type="submit"
-                            label={banning ? t('bans.banning') : t('bans.banButton')}
-                            variant="primary"
                             isDisabled={banning}
+                            label={banning ? t('bans.banning') : t('bans.banButton')}
+                            type="submit"
+                            variant="primary"
                         />
                     </div>
                 </form>
@@ -143,10 +164,11 @@ export const BansTab = () => {
                 <h3>{t('bans.title')}</h3>
             </div>
             <Typography className={styles.bflp_description}>{t('bans.description')}</Typography>
+            {/* F-22/F-25/F-26: pre-rendered live regions */}
             <StatusAlerts status={unbanStatus}/>
 
             {loading && (
-                <div className={styles.bflp_loading} aria-busy="true" aria-live="polite">
+                <div aria-busy="true" aria-live="polite" className={styles.bflp_loading}>
                     <Loader size="big"/>
                     <span className={styles.bflp_sr_only}>{t('label.loading')}</span>
                 </div>
@@ -158,12 +180,15 @@ export const BansTab = () => {
 
             {!loading && bans.length > 0 && (
                 <table className={styles.bflp_table}>
+                    {/* F-11: table caption */}
+                    <caption className={styles.bflp_tableCaption}>{t('bans.tableCaption')}</caption>
                     <thead>
                         <tr>
+                            {/* F-12: aria-sort on the bannedAt column (pre-sorted descending) */}
                             <th scope="col">{t('bans.colIp')}</th>
                             <th scope="col">{t('bans.colJail')}</th>
                             <th scope="col">{t('bans.colBanCount')}</th>
-                            <th scope="col">{t('bans.colBannedAt')}</th>
+                            <th aria-sort="descending" scope="col">{t('bans.colBannedAt')}</th>
                             <th scope="col">{t('bans.colBannedUntil')}</th>
                             <th scope="col">{t('bans.colRemaining')}</th>
                             <th scope="col">{t('bans.colReason')}</th>
@@ -188,12 +213,13 @@ export const BansTab = () => {
                                 <td>{formatDuration(b.remainingSeconds)}</td>
                                 <td>{b.reason || ''}</td>
                                 <td>{b.source || ''}</td>
+                                {/* F-21/F-28: >=44x44 touch target */}
                                 <td>
                                     <button
-                                        type="button"
-                                        className={styles.bflp_unbanBtn}
                                         aria-label={t('bans.unbanAria', {ip: b.ip})}
+                                        className={styles.bflp_tableActionBtn}
                                         disabled={unbanning && currentUnban === b.ip}
+                                        type="button"
                                         onClick={() => handleUnban(b.ip)}
                                     >
                                         {unbanning && currentUnban === b.ip ? t('bans.unbanning') : t('bans.unban')}
