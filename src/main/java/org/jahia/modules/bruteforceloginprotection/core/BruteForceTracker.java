@@ -61,7 +61,8 @@ public class BruteForceTracker implements FailureRecorder {
     // ignore patterns). Instance state, not static, so the lifecycle is bound to the component.
     private ExecutorService ignorePatternExecutor;
     private final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
-    private final AtomicLong lastHazelcastDownWarnMs = new AtomicLong(0L);
+    // Throttles the fail-open ERROR alert emitted when Hazelcast is unavailable (gates an ERROR, not a WARN).
+    private final AtomicLong lastHazelcastDownAlertMs = new AtomicLong(0L);
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -109,7 +110,17 @@ public class BruteForceTracker implements FailureRecorder {
     @Deactivate
     public void deactivate() {
         if (ignorePatternExecutor != null) {
-            ignorePatternExecutor.shutdownNow();
+            // Give in-flight (interruptible, <=50ms) matches a brief grace period before forcing
+            // shutdown, mirroring WebhookBanAction.deactivate for consistency.
+            ignorePatternExecutor.shutdown();
+            try {
+                if (!ignorePatternExecutor.awaitTermination(100L, TimeUnit.MILLISECONDS)) {
+                    ignorePatternExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                ignorePatternExecutor.shutdownNow();
+            }
         }
     }
 
@@ -121,35 +132,48 @@ public class BruteForceTracker implements FailureRecorder {
      * swallowed so a JCR hiccup never blocks component activation.
      */
     private void reconcileJcrBansOnStartup() {
+        HazelcastInstance hz = hazelcastInstance();
+        if (hz == null || !hz.getLifecycleService().isRunning()) {
+            // Without a running Hazelcast we can neither restore live bans nor safely decide which
+            // JCR mirrors are stale. Do NOT mutate JCR here: deleting nodes now would permanently
+            // lose live bans (the in-memory map can't be repopulated). Bail out so a later
+            // reconciliation (once Hazelcast is up) can do the full job.
+            LOGGER.warn("BFLP: Hazelcast not running at startup; skipping JCR ban reconciliation (will be reconciled later)");
+            return;
+        }
+        IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
                 if (!session.nodeExists(BANS_NODE_PATH)) {
                     return null;
                 }
                 long now = System.currentTimeMillis();
-                HazelcastInstance hz = hazelcastInstance();
-                IMap<String, BannedIp> bans = (hz != null && hz.getLifecycleService().isRunning())
-                        ? hz.getMap(MAP_BANS) : null;
                 javax.jcr.NodeIterator it = session.getNode(BANS_NODE_PATH).getNodes();
-                boolean dirty = false;
+                // Collect stale nodes first; removing while iterating the live NodeIterator can
+                // corrupt iteration. We delete them only after the iterator is exhausted.
+                List<JCRNodeWrapper> stale = new ArrayList<>();
                 while (it.hasNext()) {
                     JCRNodeWrapper node = (JCRNodeWrapper) it.nextNode();
                     long until = node.hasProperty(PROP_BAN_UNTIL) ? node.getProperty(PROP_BAN_UNTIL).getLong() : 0L;
                     if (until > 0 && until <= now) {
                         // Stale: TTL already elapsed. Drop it so it is not rehydrated as active.
-                        node.remove();
-                        dirty = true;
-                    } else if (bans != null) {
+                        stale.add(node);
+                    } else {
                         // Live ban: restore into the in-memory map if it didn't survive restart.
                         restoreLiveBan(bans, node, until, now);
                     }
                 }
-                if (dirty) {
+                if (!stale.isEmpty()) {
+                    for (JCRNodeWrapper node : stale) {
+                        node.remove();
+                    }
                     session.save();
                 }
                 return null;
             });
-        } catch (RepositoryException e) {
+        } catch (RepositoryException | RuntimeException e) {
+            // Broad catch (incl. unchecked exceptions from the JCR lambda) so a reconciliation
+            // hiccup can never escape @Activate and disable the whole component.
             LOGGER.warn("BFLP: startup ban reconciliation failed: {}", e.getMessage());
         }
     }
@@ -277,7 +301,10 @@ public class BruteForceTracker implements FailureRecorder {
                         AuditLogger.sanitize(ip), CAS_MAX_RETRIES);
             }
             BannedIp existing = bans.get(ip);
-            int prevCount = (existing != null) ? existing.getBanCount() : jcrBanCount;
+            // Re-read the recidive base here rather than reusing the pre-loop jcrBanCount: after a
+            // full CAS exhaustion the map state has changed, so the pre-loop value may be stale and
+            // would under-count the recidive escalation.
+            int prevCount = (existing != null) ? existing.getBanCount() : readBanCountFromJcr(ip);
             banSec = RecidiveCalculator.next(prevCount, jail.getBanTimeSec(),
                     settings.getRecidiveFactor(), settings.getMaxBanTimeSec());
             String reason = "Exceeded " + jail.getMaxRetry() + " failures in " + jail.getFindTimeSec() + "s window";
@@ -435,8 +462,8 @@ public class BruteForceTracker implements FailureRecorder {
         // throttled WARN so operators notice the protection gap without flooding the log.
         if (hz == null || !hz.getLifecycleService().isRunning()) {
             long nowMs = System.currentTimeMillis();
-            long last = lastHazelcastDownWarnMs.get();
-            if (nowMs - last > IGNORE_PATTERN_WARN_THROTTLE_MS && lastHazelcastDownWarnMs.compareAndSet(last, nowMs)) {
+            long last = lastHazelcastDownAlertMs.get();
+            if (nowMs - last > IGNORE_PATTERN_WARN_THROTTLE_MS && lastHazelcastDownAlertMs.compareAndSet(last, nowMs)) {
                 // Alertable ERROR: while the distributed ban store is down, NO ban is enforced
                 // (fail-open). Operators must treat this as a protection outage, not noise.
                 LOGGER.error("BFLP: Hazelcast unavailable; ban enforcement DISABLED cluster-wide (fail-open) - all logins permitted until it recovers");
@@ -499,10 +526,14 @@ public class BruteForceTracker implements FailureRecorder {
         return false;
     }
 
-    private boolean matchesIgnorePattern(String username, List<String> patterns) {
-        if (username == null || patterns == null || patterns.isEmpty()) {
+    private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {
+        if (rawUsername == null || patterns == null || patterns.isEmpty()) {
             return false;
         }
+        // Normalize ONLY for matching (trim + lower-case), consistently for every auth method, so
+        // case/whitespace variants of an allowlisted account ("Admin", " admin ") cannot bypass an
+        // operator's ignorePatterns. The original-case username is still recorded in the audit log.
+        String username = rawUsername.trim().toLowerCase(java.util.Locale.ROOT);
         for (String p : patterns) {
             IgnorePatternResult result = evaluateIgnorePattern(username, p);
             if (result == IgnorePatternResult.MATCHED) {
@@ -526,6 +557,13 @@ public class BruteForceTracker implements FailureRecorder {
             compiled = Pattern.compile(p);
         } catch (PatternSyntaxException e) {
             LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+        // During/after @Deactivate the executor is shut down. submit() would then throw
+        // RejectedExecutionException, which the catch below treats as fail-closed (MATCHED) and
+        // would silently stop ALL failure recording. A torn-down component must fail OPEN, so
+        // ignore-pattern matching is skipped (NOT_MATCHED) and the failure is still recorded.
+        if (ignorePatternExecutor == null || ignorePatternExecutor.isShutdown()) {
             return IgnorePatternResult.NOT_MATCHED;
         }
         final Future<Boolean> future;

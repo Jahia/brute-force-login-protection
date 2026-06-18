@@ -8,7 +8,6 @@ import org.jahia.params.valves.LoginEngineAuthValveImpl;
 import org.osgi.service.component.annotations.Component;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Locale;
 
 /**
  * Detects standard form-login failures by reading the {@code VALVE_RESULT} request attribute.
@@ -29,22 +28,13 @@ public class FormLoginFailureDetector implements AuthFailureDetector {
                 && !LoginEngineAuthValveImpl.UNKNOWN_USER.equals(result)) {
             return null;
         }
+        // Pass the raw username unchanged so audit logs preserve the original case. Normalization
+        // for ignore-pattern matching happens centrally in BruteForceTracker.matchesIgnorePattern,
+        // keeping matching consistent across all auth methods without lowercasing the audit trail.
         return FailureSignal.builder(BruteForceLoginProtectionConstants.DEFAULT_JAIL_LOGIN)
-                .username(normalizeUsername(request.getParameter("username")))
+                .username(request.getParameter("username"))
                 .extra("result", String.valueOf(result))
                 .build();
-    }
-
-    /**
-     * Normalize the submitted username before it feeds ignore-pattern matching: trim surrounding
-     * whitespace and lower-case using {@link Locale#ROOT} so case/whitespace variants of an
-     * allowlisted account ("Admin", " admin ") cannot bypass an operator's {@code ignorePatterns}.
-     */
-    private static String normalizeUsername(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     @Override

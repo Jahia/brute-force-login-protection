@@ -107,6 +107,11 @@ public class WebhookBanAction implements BanAction {
         }
         String body = buildJson(context, event);
         String secret = settings.getWebhookSecret();
+        // After @Deactivate the executor is null/shut down; submitting would throw. Skip quietly so
+        // a ban firing during a bundle refresh doesn't surface a spurious error.
+        if (webhookExecutor == null) {
+            return;
+        }
         final HttpURLConnection[] connHolder = new HttpURLConnection[1];
         Future<Void> future = webhookExecutor.submit(() -> {
             deliver(url, pinned, body, secret, connHolder);

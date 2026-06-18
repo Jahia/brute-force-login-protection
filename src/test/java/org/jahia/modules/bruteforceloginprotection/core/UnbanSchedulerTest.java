@@ -66,6 +66,9 @@ public class UnbanSchedulerTest {
         // Wire bansMap to bansStore so entrySet, remove behave realistically
         when(bansMap.entrySet()).thenAnswer(inv -> new java.util.HashSet<>(bansStore.entrySet()));
         when(bansMap.remove(anyString())).thenAnswer(inv -> bansStore.remove((String) inv.getArgument(0)));
+        // Value-checked overload used by sweep() to avoid dropping a concurrently re-installed ban
+        when(bansMap.remove(anyString(), any())).thenAnswer(inv ->
+                bansStore.remove(inv.getArgument(0), inv.getArgument(1)));
 
         inject(scheduler, "hazelcastManager", hazelcastManager);
         inject(scheduler, "tracker", tracker);

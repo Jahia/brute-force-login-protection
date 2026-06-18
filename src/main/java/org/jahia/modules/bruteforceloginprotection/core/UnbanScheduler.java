@@ -54,10 +54,10 @@ public class UnbanScheduler {
     }
 
     public void sweep() {
-        // scheduleWithFixedDelay permanently cancels the task if its run throws, so this method must
-        // never propagate a recoverable failure — catch Exception around the ENTIRE body, including
-        // the audit-log trim, so a transient failure only skips one interval. Errors (OOM etc.) are
-        // intentionally left to propagate.
+        // scheduleWithFixedDelay permanently cancels the task if its run throws ANY Throwable, so
+        // this method must never let one escape — a single uncaught error (even from a third-party
+        // BanAction) would silently kill the unban sweep for the JVM's lifetime. Catch Throwable
+        // around the ENTIRE body, including the audit-log trim, so a failure only skips one interval.
         try {
             HazelcastInstance hz = hazelcastManager.getHazelcastInstance();
             if (hz != null && hazelcastManager.isRunning()) {
@@ -71,7 +71,11 @@ public class UnbanScheduler {
                 // guarding on the remove result prevents a duplicate dispatch.
                 for (Map.Entry<String, BannedIp> e : new ArrayList<>(bans.entrySet())) {
                     BannedIp b = e.getValue();
-                    if (b != null && b.isExpired(now) && bans.remove(e.getKey()) != null) {
+                    // Value-checked remove: a concurrent re-ban could install a fresh (non-expired)
+                    // BannedIp under the same key between our snapshot read and this remove. The
+                    // value-less remove(key) would silently drop that fresh ban; remove(key, b)
+                    // only deletes when the entry is STILL the expired one we observed.
+                    if (b != null && b.isExpired(now) && bans.remove(e.getKey(), b)) {
                         expired.add(b);
                     }
                 }
@@ -93,7 +97,7 @@ public class UnbanScheduler {
             // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
             // on the hot login-failure recording path).
             auditLogger.trimAuditLog();
-        } catch (Exception t) {
+        } catch (Throwable t) { // NOSONAR S1181: scheduleWithFixedDelay cancels the task on any escaping Throwable; we must swallow it so the recurring sweep survives.
             LOGGER.error("BFLP: unban sweep failed; will retry on next interval", t);
         }
     }
