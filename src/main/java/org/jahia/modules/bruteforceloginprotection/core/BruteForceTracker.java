@@ -10,6 +10,7 @@ import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureEvent;
 import org.jahia.modules.bruteforceloginprotection.spi.FailureRecorder;
 import org.jahia.services.content.JCRNodeWrapper;
+import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.JCRTemplate;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -28,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -37,6 +39,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -63,6 +66,20 @@ public class BruteForceTracker implements FailureRecorder {
     private final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
     // Throttles the fail-open ERROR alert emitted when Hazelcast is unavailable (gates an ERROR, not a WARN).
     private final AtomicLong lastHazelcastDownAlertMs = new AtomicLong(0L);
+
+    // Cache compiled Pattern objects so each distinct pattern string is compiled once rather
+    // than on every login attempt. PatternSyntaxException entries are never cached (the compile
+    // call is simply skipped and NOT_MATCHED is returned, exactly as before).
+    // Operator-configured patterns are typically few; 256 is a generous ceiling. When the cap is
+    // reached the whole cache is cleared (coarse but safe — entries are recompiled on next use).
+    private static final int MAX_COMPILED_PATTERN_CACHE = 256;
+    private final ConcurrentHashMap<String, Pattern> compiledPatternCache = new ConcurrentHashMap<>();
+
+    // Cache for the parsed whitelist CidrMatcher list. Recomputed only when the whitelist
+    // settings string changes; avoids constructing a new CidrMatcher per entry on every request.
+    private record WhitelistCache(String source, List<CidrMatcher> matchers) {}
+    private final AtomicReference<WhitelistCache> whitelistCache =
+            new AtomicReference<>(new WhitelistCache(null, Collections.emptyList()));
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -144,38 +161,49 @@ public class BruteForceTracker implements FailureRecorder {
         IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
         try {
             jcrTemplate.doExecuteWithSystemSessionAsUser(null, Constants.EDIT_WORKSPACE, null, session -> {
-                if (!session.nodeExists(BANS_NODE_PATH)) {
-                    return null;
-                }
-                long now = System.currentTimeMillis();
-                javax.jcr.NodeIterator it = session.getNode(BANS_NODE_PATH).getNodes();
-                // Collect stale nodes first; removing while iterating the live NodeIterator can
-                // corrupt iteration. We delete them only after the iterator is exhausted.
-                List<JCRNodeWrapper> stale = new ArrayList<>();
-                while (it.hasNext()) {
-                    JCRNodeWrapper node = (JCRNodeWrapper) it.nextNode();
-                    long until = node.hasProperty(PROP_BAN_UNTIL) ? node.getProperty(PROP_BAN_UNTIL).getLong() : 0L;
-                    if (until > 0 && until <= now) {
-                        // Stale: TTL already elapsed. Drop it so it is not rehydrated as active.
-                        stale.add(node);
-                    } else {
-                        // Live ban: restore into the in-memory map if it didn't survive restart.
-                        restoreLiveBan(bans, node, until, now);
-                    }
-                }
-                if (!stale.isEmpty()) {
-                    for (JCRNodeWrapper node : stale) {
-                        node.remove();
-                    }
-                    session.save();
-                }
+                reconcileBansInSession(session, bans);
                 return null;
             });
         } catch (RepositoryException | RuntimeException e) {
-            // Broad catch (incl. unchecked exceptions from the JCR lambda) so a reconciliation
-            // hiccup can never escape @Activate and disable the whole component.
+            // A broad catch here is deliberate so that a reconciliation failure can never escape
+            // component activation. Any JCR or runtime error is logged and then intentionally ignored.
             LOGGER.warn("BFLP: startup ban reconciliation failed: {}", e.getMessage());
         }
+    }
+
+    private static void reconcileBansInSession(JCRSessionWrapper session, IMap<String, BannedIp> bans)
+            throws RepositoryException {
+        if (!session.nodeExists(BANS_NODE_PATH)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        javax.jcr.NodeIterator it = session.getNode(BANS_NODE_PATH).getNodes();
+        // Collect stale nodes first; removing while iterating the live NodeIterator can
+        // corrupt iteration. We delete them only after the iterator is exhausted.
+        List<JCRNodeWrapper> stale = new ArrayList<>();
+        while (it.hasNext()) {
+            JCRNodeWrapper node = (JCRNodeWrapper) it.nextNode();
+            long until = node.hasProperty(PROP_BAN_UNTIL) ? node.getProperty(PROP_BAN_UNTIL).getLong() : 0L;
+            if (until > 0 && until <= now) {
+                // Stale: TTL already elapsed. Drop it so it is not rehydrated as active.
+                stale.add(node);
+            } else {
+                // Live ban: restore into the in-memory map if it didn't survive restart.
+                restoreLiveBan(bans, node, until, now);
+            }
+        }
+        removeStaleNodes(session, stale);
+    }
+
+    private static void removeStaleNodes(JCRSessionWrapper session, List<JCRNodeWrapper> stale)
+            throws RepositoryException {
+        if (stale.isEmpty()) {
+            return;
+        }
+        for (JCRNodeWrapper node : stale) {
+            node.remove();
+        }
+        session.save();
     }
 
     private static void restoreLiveBan(IMap<String, BannedIp> bans, JCRNodeWrapper node, long until, long now)
@@ -477,10 +505,11 @@ public class BruteForceTracker implements FailureRecorder {
         }
         long now = System.currentTimeMillis();
         if (banned.isExpired(now)) {
-            // Only touch JCR if THIS request actually removed the expired entry, so the
-            // per-request hot path doesn't issue a JCR write on every hit for an already-removed
-            // ban. The UnbanScheduler sweep is the primary cleanup path; this is a backstop.
-            if (bans.remove(ip) != null) {
+            // Value-checked remove: only act if this request actually removed *this* exact entry.
+            // A plain remove(ip) could evict a concurrently re-installed fresh ban; using the
+            // value-checked overload ensures we only touch JCR when we removed the stale entry.
+            // The UnbanScheduler sweep is the primary cleanup path; this is a backstop.
+            if (bans.remove(ip, banned)) {
                 removeBanFromJcr(ip);
             }
             return false;
@@ -508,22 +537,44 @@ public class BruteForceTracker implements FailureRecorder {
         return hazelcastManager != null ? hazelcastManager.getHazelcastInstance() : null;
     }
 
-    private static boolean isWhitelisted(String ip, String whitelist) {
+    private boolean isWhitelisted(String ip, String whitelist) {
         if (StringUtils.isBlank(whitelist)) {
             return false;
         }
-        for (String entry : whitelist.split(",")) {
-            String trimmed = StringUtils.trimToNull(entry);
-            if (trimmed == null) continue;
-            try {
-                if (new CidrMatcher(trimmed).matches(ip)) {
-                    return true;
-                }
-            } catch (IllegalArgumentException ignored) {
-                // skip invalid CIDR
+        List<CidrMatcher> matchers = getWhitelistMatchers(whitelist);
+        for (CidrMatcher matcher : matchers) {
+            if (matcher.matches(ip)) {
+                return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Returns the parsed {@link CidrMatcher} list for the given whitelist string, rebuilding
+     * and caching it only when the string has changed. Malformed CIDR entries are silently
+     * skipped, identical to the previous per-call behaviour.
+     */
+    private List<CidrMatcher> getWhitelistMatchers(String whitelist) {
+        WhitelistCache cache = whitelistCache.get();
+        if (whitelist.equals(cache.source())) {
+            return cache.matchers();
+        }
+        List<CidrMatcher> matchers = new ArrayList<>();
+        for (String entry : whitelist.split(",")) {
+            String trimmed = StringUtils.trimToNull(entry);
+            if (trimmed == null) {
+                continue;
+            }
+            try {
+                matchers.add(new CidrMatcher(trimmed));
+            } catch (IllegalArgumentException ignored) {
+                // skip invalid CIDR — same behaviour as before
+            }
+        }
+        List<CidrMatcher> immutable = Collections.unmodifiableList(matchers);
+        whitelistCache.compareAndSet(cache, new WhitelistCache(whitelist, immutable));
+        return immutable;
     }
 
     private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {
@@ -552,31 +603,76 @@ public class BruteForceTracker implements FailureRecorder {
         if (StringUtils.isBlank(p)) {
             return IgnorePatternResult.NOT_MATCHED;
         }
-        final Pattern compiled;
+        Pattern compiled = compiledPattern(p);
+        if (compiled == null) {
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+        Future<Boolean> future = submitMatchTask(compiled, username, p);
+        if (future == null) {
+            return IgnorePatternResult.NOT_MATCHED;
+        }
+        return awaitMatchResult(future, p);
+    }
+
+    /**
+     * Returns a compiled {@link Pattern} for {@code p}, using the cache so each distinct
+     * pattern string is only compiled once. Returns {@code null} for invalid patterns
+     * (PatternSyntaxException), which the caller treats as NOT_MATCHED.
+     */
+    private Pattern compiledPattern(String p) {
+        Pattern cached = compiledPatternCache.get(p);
+        if (cached != null) {
+            return cached;
+        }
         try {
-            compiled = Pattern.compile(p);
+            Pattern compiled = Pattern.compile(p);
+            if (compiledPatternCache.size() >= MAX_COMPILED_PATTERN_CACHE) {
+                compiledPatternCache.clear();
+            }
+            compiledPatternCache.putIfAbsent(p, compiled);
+            return compiledPatternCache.get(p);
         } catch (PatternSyntaxException e) {
             LOGGER.debug("BFLP: invalid ignore pattern '{}'", AuditLogger.sanitize(p));
-            return IgnorePatternResult.NOT_MATCHED;
+            return null;
         }
-        // During/after @Deactivate the executor is shut down. submit() would then throw
-        // RejectedExecutionException, which the catch below treats as fail-closed (MATCHED) and
-        // would silently stop ALL failure recording. A torn-down component must fail OPEN, so
-        // ignore-pattern matching is skipped (NOT_MATCHED) and the failure is still recorded.
+    }
+
+    /**
+     * Submits the match task to the bounded executor. Returns {@code null} when the executor
+     * is shut down (fail-open: NOT_MATCHED) or when the queue is saturated (fail-closed via
+     * {@link #warnIgnorePatternTimeout} before returning MATCHED — handled by the non-null
+     * sentinel return so the caller can distinguish the two cases).
+     *
+     * Returns a non-null Future on success, or null to signal NOT_MATCHED (executor gone).
+     * Fail-closed (queue saturated) is surfaced by warning and returning a special sentinel;
+     * to keep the method simple it instead calls warnIgnorePatternTimeout and returns null,
+     * with the caller treating null as NOT_MATCHED — but pool saturation must be fail-closed.
+     * Therefore this method returns a completed MATCHED future on saturation so the
+     * awaitMatchResult path can handle it uniformly.
+     */
+    private Future<Boolean> submitMatchTask(Pattern compiled, String username, String p) {
+        // During/after @Deactivate the executor is shut down. Fail OPEN so failure recording
+        // is not silently suppressed when the component is torn down.
         if (ignorePatternExecutor == null || ignorePatternExecutor.isShutdown()) {
-            return IgnorePatternResult.NOT_MATCHED;
+            return null;
         }
-        final Future<Boolean> future;
         try {
-            // Wrap the input so a cancel(true) interrupt actually aborts catastrophic backtracking:
-            // Matcher polls charAt(), and InterruptibleCharSequence throws on an interrupted thread.
-            future = ignorePatternExecutor.submit(
+            // Wrap the input so cancel(true) actually aborts catastrophic backtracking:
+            // Matcher polls charAt(), and InterruptibleCharSequence throws on interrupted thread.
+            return ignorePatternExecutor.submit(
                     () -> compiled.matcher(new InterruptibleCharSequence(username)).matches());
         } catch (RejectedExecutionException ree) {
             // Pool + queue saturated (likely a ReDoS-style flood). Fail closed, like a timeout.
             warnIgnorePatternTimeout(p);
-            return IgnorePatternResult.MATCHED;
+            return java.util.concurrent.CompletableFuture.completedFuture(Boolean.TRUE);
         }
+    }
+
+    /**
+     * Waits for the match future and maps the outcome to an {@link IgnorePatternResult}.
+     * Timeout and thread-interruption semantics are unchanged from the original implementation.
+     */
+    private IgnorePatternResult awaitMatchResult(Future<Boolean> future, String p) {
         try {
             return Boolean.TRUE.equals(future.get(IGNORE_PATTERN_MATCH_TIMEOUT_MS, TimeUnit.MILLISECONDS))
                     ? IgnorePatternResult.MATCHED
@@ -664,16 +760,10 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
-    public static String ipToNodeName(String ip) {
+    static String ipToNodeName(String ip) {
         return "b-" + ip.replace('.', '_').replace(':', '-').replace('/', '_');
     }
 
-    /**
-     * A {@link CharSequence} view that makes regex matching responsive to thread interruption.
-     * {@link java.util.regex.Matcher} reads its input through {@code charAt}, so checking the
-     * interrupt flag there lets a {@code future.cancel(true)} actually abort a catastrophic
-     * backtracking match instead of leaving the worker thread spinning to completion.
-     */
     /** Thrown by {@link InterruptibleCharSequence} to abort a regex match on thread interruption. */
     private static final class RegexInterruptedException extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -683,6 +773,12 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
+    /**
+     * A {@link CharSequence} view that makes regex matching responsive to thread interruption.
+     * {@link java.util.regex.Matcher} reads its input through {@code charAt}, so checking the
+     * interrupt flag there lets a {@code future.cancel(true)} actually abort a catastrophic
+     * backtracking match instead of leaving the worker thread spinning to completion.
+     */
     private static final class InterruptibleCharSequence implements CharSequence {
         private final CharSequence inner;
 

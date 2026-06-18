@@ -1,6 +1,5 @@
 package org.jahia.modules.bruteforceloginprotection.core;
 
-import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
@@ -61,10 +60,16 @@ public class AuditLogger {
                 JCRNodeWrapper entry = bucket.addNode(name, NT_AUDIT_ENTRY);
                 entry.setProperty(PROP_AUDIT_TIMESTAMP, now);
                 entry.setProperty(PROP_AUDIT_EVENT, event);
-                if (ip != null) entry.setProperty(PROP_AUDIT_IP, ip);
-                if (jail != null) entry.setProperty(PROP_AUDIT_JAIL, jail);
-                if (source != null) entry.setProperty(PROP_AUDIT_SOURCE, source);
+                // Sanitize ip, jail, and source at the JCR boundary to neutralise CR/LF/control
+                // characters regardless of whether the caller already sanitized them. This mirrors
+                // what callers already do for the 'details' field and closes the security boundary.
+                if (ip != null) entry.setProperty(PROP_AUDIT_IP, sanitize(ip));
+                if (jail != null) entry.setProperty(PROP_AUDIT_JAIL, sanitize(jail));
+                if (source != null) entry.setProperty(PROP_AUDIT_SOURCE, sanitize(source));
                 if (details != null) entry.setProperty(PROP_AUDIT_DETAILS, details);
+                // First save: commits the new entry. This save is intentionally separate from
+                // the second save inside trimIfNeeded so that the entry is persisted even when
+                // the piggyback trim is not triggered.
                 session.save();
                 // Trim is deliberately NOT called here on every write (O(n) JCR scan).
                 // The periodic sweep in UnbanScheduler calls trimAuditLog() every 30 s.
@@ -74,6 +79,10 @@ public class AuditLogger {
                 // threshold check and the reset (which would delay the next piggyback trim).
                 long writes = writesSinceTrim.incrementAndGet();
                 if (writes >= TRIM_WRITE_INTERVAL && writesSinceTrim.compareAndSet(writes, 0)) {
+                    // Second save (inside trimIfNeeded) commits only the node removals.
+                    // The two saves are sequential on the same session and intentional:
+                    // entry write → trimIfNeeded removals. No partial state is possible because
+                    // each save is a complete atomic commit of its own pending changes.
                     trimIfNeeded(container);
                 }
                 return null;
@@ -245,7 +254,19 @@ public class AuditLogger {
     }
 
     public static String sanitize(String s) {
-        return s == null ? null : StringUtils.replaceEach(s, new String[]{"\r", "\n"}, new String[]{"", ""});
+        if (s == null) {
+            return null;
+        }
+        // Strip all ISO control characters (U+0000–U+001F and U+007F) so NUL, tab,
+        // vertical-tab, etc. cannot reach JCR properties or the admin UI, not just CR/LF.
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!Character.isISOControl(c)) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     public static class AuditEntry {

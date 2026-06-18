@@ -7,6 +7,7 @@ export const GET_GLOBAL_SETTINGS = gql`
             whitelistIps
             ignorePatterns
             trustProxyHeader
+            trustedProxyCidrs
             emailEnabled
             emailRecipient
             webhookUrl
@@ -24,6 +25,7 @@ export const SAVE_GLOBAL_SETTINGS = gql`
         $whitelistIps: String,
         $ignorePatterns: [String!],
         $trustProxyHeader: Boolean,
+        $trustedProxyCidrs: [String!],
         $emailEnabled: Boolean,
         $emailRecipient: String,
         $webhookUrl: String,
@@ -37,6 +39,7 @@ export const SAVE_GLOBAL_SETTINGS = gql`
             whitelistIps: $whitelistIps,
             ignorePatterns: $ignorePatterns,
             trustProxyHeader: $trustProxyHeader,
+            trustedProxyCidrs: $trustedProxyCidrs,
             emailEnabled: $emailEnabled,
             emailRecipient: $emailRecipient,
             webhookUrl: $webhookUrl,

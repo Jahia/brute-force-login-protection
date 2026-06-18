@@ -7,10 +7,14 @@ export default function () {
         targets: ['jahiaApp-init:50'],
         callback: async () => {
             await i18next.loadNamespaces('brute-force-login-protection', () => {
-                console.debug('%c brute-force-login-protection: i18n namespace loaded', 'color: #463CBA');
+                if (process.env.NODE_ENV !== 'production') {
+                    console.debug('%c brute-force-login-protection: i18n namespace loaded', 'color: #463CBA');
+                }
             });
             register();
-            console.debug('%c brute-force-login-protection: activation completed', 'color: #463CBA');
+            if (process.env.NODE_ENV !== 'production') {
+                console.debug('%c brute-force-login-protection: activation completed', 'color: #463CBA');
+            }
         }
     });
 }

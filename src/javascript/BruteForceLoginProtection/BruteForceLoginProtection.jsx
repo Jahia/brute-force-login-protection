@@ -23,16 +23,27 @@ const TABS = [
 
 const ClusterStatusBar = () => {
     const {t} = useTranslation('brute-force-login-protection');
-    const {data} = useQuery(GET_CLUSTER_STATUS, {fetchPolicy: 'network-only'});
-    const status = data?.bruteForceLoginProtectionClusterStatus;
-    const healthy = status && status.hazelcastRunning && status.nodeCount > 0;
-    const text = healthy ?
-        t('cluster.healthy', {count: status.nodeCount}) :
-        t('cluster.degraded');
-    const cls = healthy ? styles['bflp_clusterStatus--healthy'] : styles['bflp_clusterStatus--degraded'];
+    const {data, loading, error} = useQuery(GET_CLUSTER_STATUS, {fetchPolicy: 'network-only'});
+
+    let text;
+    let cls;
+    if (loading) {
+        text = t('cluster.checking');
+        cls = styles['bflp_clusterStatus--checking'];
+    } else if (error) {
+        text = t('cluster.unknown');
+        cls = styles['bflp_clusterStatus--unknown'];
+    } else {
+        const status = data?.bruteForceLoginProtectionClusterStatus;
+        const healthy = status && status.hazelcastRunning && status.nodeCount > 0;
+        text = healthy ?
+            t('cluster.healthy', {count: status.nodeCount}) :
+            t('cluster.degraded');
+        cls = healthy ? styles['bflp_clusterStatus--healthy'] : styles['bflp_clusterStatus--degraded'];
+    }
 
     return (
-        <div aria-live="polite" className={`${styles.bflp_clusterStatus} ${cls}`} role="status">
+        <div aria-atomic="true" aria-live="polite" className={`${styles.bflp_clusterStatus} ${cls}`} role="status">
             {text}
         </div>
     );
@@ -44,17 +55,22 @@ export const BruteForceLoginProtectionAdmin = () => {
     const [flushStatus, setFlushStatus] = useTransientStatus();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const tabRefs = useRef([]);
-    const panelRef = useRef(null);
 
     const [flushAll, {loading: flushing}] = useMutation(FLUSH, {
         refetchQueries: ['GetBannedIps', 'GetTrackedWindows', 'GetAuditLog']
     });
 
-    useEffect(() => {
-        document.title = `${t('label.title')} - Jahia Administration`;
-    }, [t]);
-
     const activeIndex = TABS.findIndex(tab => tab.id === activeTab);
+    const activeTabConfig = TABS[activeIndex] ?? TABS[0];
+    const ActiveComponent = activeTabConfig.Component;
+
+    useEffect(() => {
+        const baseTitle = `${t('label.title')} - Jahia Administration`;
+        document.title = `${t(activeTabConfig.i18n)} - ${baseTitle}`;
+        return () => {
+            document.title = baseTitle;
+        };
+    }, [t, activeTabConfig]);
 
     // F-18: Arrow-key + Home/End roving-tabindex navigation
     const handleTabKeyDown = useCallback(e => {
@@ -79,10 +95,9 @@ export const BruteForceLoginProtectionAdmin = () => {
         tabRefs.current[next]?.focus();
     }, [activeIndex]);
 
-    // F-20: move focus into the panel on tab activation via keyboard
-    const handleTabClick = useCallback(id => {
+    const handleTabClick = id => {
         setActiveTab(id);
-    }, []);
+    };
 
     // F-19: accessible confirm dialog replacing window.confirm
     const handleFlushRequest = () => {
@@ -104,18 +119,15 @@ export const BruteForceLoginProtectionAdmin = () => {
         setConfirmOpen(false);
     };
 
-    const ActiveComponent = TABS.find(t2 => t2.id === activeTab)?.Component || GeneralTab;
-    const activePanelHeading = TABS.find(t2 => t2.id === activeTab)?.i18n;
-
     return (
-        /* F-01/F-03: region landmark with accessible label for the admin panel */
+        /* F-01/F-03: region landmark labelled by the admin panel heading */
         <div
-            aria-label={t('label.title')}
+            aria-labelledby="bflp-region-title"
             className={styles.bflp_container}
             role="region"
         >
             <div className={styles.bflp_header}>
-                <h2>{t('label.title')}</h2>
+                <h2 id="bflp-region-title">{t('label.title')}</h2>
             </div>
             <div className={styles.bflp_description}>
                 <Typography>{t('label.description')}</Typography>
@@ -124,14 +136,14 @@ export const BruteForceLoginProtectionAdmin = () => {
             <ClusterStatusBar/>
 
             {/* F-18: tablist with arrow-key roving-tabindex */}
-            <div aria-label={t('label.title')} className={styles.bflp_tabs} role="tablist">
+            <div aria-label={t('label.tabNavigation')} className={styles.bflp_tabs} role="tablist">
                 {TABS.map((tab, i) => (
                     <button
                         key={tab.id}
                         ref={el => {
                             tabRefs.current[i] = el;
                         }}
-                        aria-controls={`bflp-tabpanel-${tab.id}`}
+                        aria-controls="bflp-tabpanel"
                         aria-selected={activeTab === tab.id}
                         className={`${styles.bflp_tab} ${activeTab === tab.id ? styles['bflp_tab--active'] : ''}`}
                         id={`bflp-tab-${tab.id}`}
@@ -146,16 +158,15 @@ export const BruteForceLoginProtectionAdmin = () => {
                 ))}
             </div>
 
-            {/* F-02: visually-hidden h2 owning each tab panel, F-03: region role */}
+            {/* F-02: visually-hidden h2 owning the tab panel, F-03: region role */}
             <div
-                ref={panelRef}
                 aria-labelledby={`bflp-tab-${activeTab}`}
                 className={styles.bflp_tabPanelWrapper}
-                id={`bflp-tabpanel-${activeTab}`}
+                id="bflp-tabpanel"
                 role="tabpanel"
                 tabIndex={-1}
             >
-                <h2 className={styles.bflp_sr_only}>{t(activePanelHeading)}</h2>
+                <h2 className={styles.bflp_sr_only}>{t(activeTabConfig.i18n)}</h2>
                 <ActiveComponent/>
             </div>
 

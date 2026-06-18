@@ -45,6 +45,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -62,14 +63,20 @@ public class HazelcastInstanceManager implements Runnable {
     // Mutated by dynamic OSGi @Reference bind/unbind from arbitrary threads while the discovery
     // scheduler iterates it — CopyOnWriteArrayList avoids ConcurrentModificationException.
     private final List<DiscoveryService> discoveryServices = new CopyOnWriteArrayList<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final BundleListener flushClassLoaderCacheBundleListener = event -> ClassLoaderUtil.flushCache();
 
     private ClassLoader classLoader;
-    private HazelcastInstance hazelcastInstance;
-    // Written from both @Activate and the discovery scheduler thread, read from both — volatile
-    // for safe publication of the latest member set.
-    private volatile Set<String> discoveredMembers;
+    // Written in @Activate (SCR thread), read from the discovery scheduler thread and getters —
+    // AtomicReference for safe cross-thread publication without S3077 volatile-object concern.
+    private final AtomicReference<HazelcastInstance> hazelcastInstance = new AtomicReference<>();
+    // Written from both @Activate and the discovery scheduler thread, read from both.
+    // An AtomicReference holding an unmodifiable snapshot avoids the S3077 volatile-collection
+    // issue and ensures safe cross-thread publication without mutation through the reference.
+    private final AtomicReference<Set<String>> discoveredMembers =
+            new AtomicReference<>(java.util.Collections.emptySet());
+    // Created in @Activate and shut down in @Deactivate so that a deactivate/reactivate cycle
+    // always starts with a fresh, running executor (avoids RejectedExecutionException).
+    private ScheduledExecutorService scheduler;
 
     @Reference(service = DiscoveryService.class,
             policy = ReferencePolicy.DYNAMIC,
@@ -94,22 +101,26 @@ public class HazelcastInstanceManager implements Runnable {
     }
 
     public HazelcastInstance getHazelcastInstance() {
-        return hazelcastInstance;
+        return hazelcastInstance.get();
     }
 
     public boolean isRunning() {
-        return hazelcastInstance != null && hazelcastInstance.getLifecycleService().isRunning();
+        HazelcastInstance hz = hazelcastInstance.get();
+        return hz != null && hz.getLifecycleService().isRunning();
     }
 
     public int getClusterNodeCount() {
         if (!isRunning()) {
             return 0;
         }
-        return hazelcastInstance.getCluster().getMembers().size();
+        return hazelcastInstance.get().getCluster().getMembers().size();
     }
 
     @Activate
     protected void init(BundleContext bundleContext) {
+        // Create a fresh executor on every activation so that a deactivate/reactivate cycle does
+        // not reuse the previously shut-down instance (which would throw RejectedExecutionException).
+        this.scheduler = Executors.newScheduledThreadPool(1);
         this.classLoader = new ClassLoaderUtils.CoreAndModulesClassLoader(ClassLoaderUtils.CoreAndModulesClassLoader.class.getClassLoader());
         ClassLoaderUtil.flushCache();
 
@@ -127,15 +138,16 @@ public class HazelcastInstanceManager implements Runnable {
 
             TcpIpConfig tcpIpConfig = hazelcastConfig.getNetworkConfig().getJoin().getTcpIpConfig();
             if (tcpIpConfig.isEnabled() && !discoveryServices.isEmpty()) {
-                this.discoveredMembers = getCurrentMembers();
-                if (!discoveredMembers.isEmpty()) {
-                    tcpIpConfig.setMembers(new LinkedList<>(discoveredMembers));
+                discoveredMembers.set(java.util.Collections.unmodifiableSet(getCurrentMembers()));
+                Set<String> members = discoveredMembers.get();
+                if (!members.isEmpty()) {
+                    tcpIpConfig.setMembers(new LinkedList<>(members));
                 }
-                logger.info("BFLP: initial members {}", discoveredMembers);
-                this.hazelcastInstance = Hazelcast.getOrCreateHazelcastInstance(hazelcastConfig);
+                logger.info("BFLP: initial members {}", members);
+                hazelcastInstance.set(Hazelcast.getOrCreateHazelcastInstance(hazelcastConfig));
                 scheduler.scheduleWithFixedDelay(this, 10, 10, TimeUnit.SECONDS);
             } else {
-                this.hazelcastInstance = Hazelcast.getOrCreateHazelcastInstance(hazelcastConfig);
+                hazelcastInstance.set(Hazelcast.getOrCreateHazelcastInstance(hazelcastConfig));
                 logger.info("BFLP: Hazelcast started in single-node mode");
             }
 
@@ -150,25 +162,30 @@ public class HazelcastInstanceManager implements Runnable {
         logger.info("BFLP: shutting down");
         // Wait for the discovery task to finish so it cannot touch the Hazelcast instance or
         // bundle classloader after they are torn down below.
-        scheduler.shutdownNow();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                logger.warn("BFLP: discovery scheduler did not terminate within 5s");
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+            try {
+                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    logger.warn("BFLP: discovery scheduler did not terminate within 5s");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            scheduler = null;
         }
         try {
             bundleContext.removeBundleListener(flushClassLoaderCacheBundleListener);
         } catch (Exception e) {
             logger.debug("BFLP: error removing bundle listener", e);
         }
-        if (hazelcastInstance != null) {
+        HazelcastInstance hz = hazelcastInstance.get();
+        if (hz != null) {
             try {
-                hazelcastInstance.shutdown();
+                hz.shutdown();
             } catch (Exception e) {
                 logger.debug("BFLP: error shutting down hazelcast", e);
             }
+            hazelcastInstance.set(null);
         }
         ClassLoaderUtil.flushCache();
         this.classLoader = null;
@@ -366,11 +383,16 @@ public class HazelcastInstanceManager implements Runnable {
 
     @Override
     public void run() {
+        // Guard against firing after a failed activation or during/after deactivation.
+        HazelcastInstance hz = hazelcastInstance.get();
+        if (hz == null || !isRunning()) {
+            return;
+        }
         Set<String> currentMembers = getCurrentMembers();
-        if (!CellarUtils.collectionEquals(discoveredMembers, currentMembers)) {
-            logger.info("BFLP: members changed from {} to {}", discoveredMembers, currentMembers);
-            discoveredMembers = currentMembers;
-            hazelcastInstance.getConfig().getNetworkConfig().getJoin().getTcpIpConfig().setMembers(new LinkedList<>(currentMembers));
+        if (!CellarUtils.collectionEquals(discoveredMembers.get(), currentMembers)) {
+            logger.info("BFLP: members changed from {} to {}", discoveredMembers.get(), currentMembers);
+            discoveredMembers.set(java.util.Collections.unmodifiableSet(currentMembers));
+            hz.getConfig().getNetworkConfig().getJoin().getTcpIpConfig().setMembers(new LinkedList<>(currentMembers));
         }
     }
 

@@ -32,45 +32,56 @@ Package layout: `hazelcast/`, `spi/`, `core/`, `actions/`, `sources/`, `graphql/
 | `actions.InProcessBlockAction` | Default ban action (priority `0`); writes the ban into the distributed map so the valve enforces it |
 | `actions.EmailBanAction` | Sends a notification (priority `10`); throttled per-IP |
 | `actions.WebhookBanAction` | POSTs JSON to a configured URL (priority `20`); signs the body with HMAC-SHA256 in header `X-BFLP-Signature` |
-| `graphql.BruteForceLoginProtectionQueryExtension` / `MutationExtension` | GraphQL surface, all gated by `@GraphQLRequiresPermission("admin")` |
+| `graphql.BruteForceLoginProtectionQueryExtension` / `MutationExtension` | GraphQL surface, all gated by `@GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")` |
 | `graphql.types.*` | DTOs returned by GraphQL (`GqlGlobalSettings`, `GqlJail`, `GqlBannedIp`, `GqlFailureWindow`, `GqlAuditEntry`, `GqlBanActionInfo`, `GqlClusterStatus`) |
 | `CidrMatcher` | IPv4 and IPv6 CIDR whitelist matching using byte-level mask comparison |
 
 ## GraphQL API
 
-| Operation | Name | Returns |
-|-----------|------|---------|
-| Query | `bruteForceLoginProtectionGlobalSettings` | `GqlGlobalSettings` |
-| Query | `bruteForceLoginProtectionJails` | `[GqlJail]` |
-| Query | `bruteForceLoginProtectionBannedIps` | `[GqlBannedIp]` |
-| Query | `bruteForceLoginProtectionTrackedWindows` | `[GqlFailureWindow]` |
-| Query | `bruteForceLoginProtectionAuditLog(limit?)` | `[GqlAuditEntry]` |
-| Query | `bruteForceLoginProtectionBanActions` | `[GqlBanActionInfo]` (name, class, priority) |
-| Query | `bruteForceLoginProtectionClusterStatus` | `GqlClusterStatus { running, nodes }` |
-| Mutation | `bruteForceLoginProtectionSaveGlobalSettings(activated, whitelistIps, ignorePatterns, trustProxyHeader, emailEnabled, emailRecipient, webhookUrl, webhookSecret, auditLogMaxEntries, recidiveFactor, maxBanTimeSeconds)` | Boolean |
-| Mutation | `bruteForceLoginProtectionSaveJail(name!, enabled, maxRetry, findTimeSeconds, banTimeSeconds)` | Boolean |
-| Mutation | `bruteForceLoginProtectionDeleteJail(name!)` | Boolean |
-| Mutation | `bruteForceLoginProtectionUnbanIp(ip!)` | Boolean |
-| Mutation | `bruteForceLoginProtectionBanIp(ip!, jail?, durationSeconds?, reason?)` | Boolean |
-| Mutation | `bruteForceLoginProtectionFlush` | Boolean (clears bans + windows in cluster + JCR) |
-| Mutation | `bruteForceLoginProtectionClearAuditLog` | Boolean |
+| Operation | Name | Arguments | Returns |
+|-----------|------|-----------|---------|
+| Query | `bruteForceLoginProtectionGlobalSettings` | — | `GqlGlobalSettings` |
+| Query | `bruteForceLoginProtectionJails` | — | `[GqlJail]` |
+| Query | `bruteForceLoginProtectionBannedIps` | — | `[GqlBannedIp]` |
+| Query | `bruteForceLoginProtectionTrackedWindows` | — | `[GqlFailureWindow]` |
+| Query | `bruteForceLoginProtectionAuditLog` | `limit?` | `[GqlAuditEntry]` |
+| Query | `bruteForceLoginProtectionBanActions` | — | `[GqlBanActionInfo]` |
+| Query | `bruteForceLoginProtectionClusterStatus` | — | `GqlClusterStatus` |
+| Query | `bruteForceLoginProtectionConfigReady` | `jail?` | `GqlConfigReadiness { globalReady, jailReady }` |
+| Mutation | `bruteForceLoginProtectionSaveGlobalSettings` | `activated`, `whitelistIps`, `ignorePatterns`, `trustProxyHeader`, `trustedProxyCidrs`, `emailEnabled`, `emailRecipient`, `webhookUrl`, `webhookSecret`, `auditLogMaxEntries`, `recidiveFactor`, `maxBanTimeSeconds` | Boolean |
+| Mutation | `bruteForceLoginProtectionSaveJail` | `name!`, `enabled`, `maxRetry`, `findTimeSeconds`, `banTimeSeconds` | Boolean |
+| Mutation | `bruteForceLoginProtectionDeleteJail` | `name!` | Boolean |
+| Mutation | `bruteForceLoginProtectionUnbanIp` | `ip!` | Boolean |
+| Mutation | `bruteForceLoginProtectionBanIp` | `ip!`, `jail?`, `durationSeconds?`, `reason?` | Boolean |
+| Mutation | `bruteForceLoginProtectionFlush` | — | Boolean |
+| Mutation | `bruteForceLoginProtectionClearAuditLog` | — | Boolean |
+| Mutation | `bruteForceLoginProtectionTestEmail` | — | `GqlTestResult { success, message }` |
+| Mutation | `bruteForceLoginProtectionTestWebhook` | — | `GqlTestResult { success, message }` |
 
-`webhookSecret` follows a tri-state convention: `null` leaves the stored secret untouched, `""` clears it, any other string replaces it.
+**webhookSecret tri-state:** `null` = leave unchanged, `""` = clear, other = replace.
+
+**configReady probe:** `globalReady=true` once `GlobalConfigHolder` has received its first OSGi config update; `jailReady=true` once the given jail name has been registered (used by e2e tests to wait for mutations to propagate).
 
 ## Settings persistence
 
-Settings root: `/settings/bruteforceloginprotection` (type `jnt:bruteForceLoginProtection`). Children are autocreated.
+**Configuration (OSGi ConfigurationAdmin)** — Global settings and jail definitions are stored in `<jahia-var>/karaf/etc/` with automatic reloading:
+
+| Kind | PID | Storage |
+|------|-----|---------|
+| Global settings (singleton) | `org.jahia.modules.bruteforceloginprotection.global` | `org.jahia.modules.bruteforceloginprotection.global.cfg` |
+| Jail definition (factory) | `org.jahia.modules.bruteforceloginprotection.jail` | `org.jahia.modules.bruteforceloginprotection.jail-<name>.cfg` |
+
+Each jail `.cfg` MUST contain `name=<jail-id>`; the filename discriminator is only used by Felix to uniquely key the configuration on disk. Settings are read into in-memory snapshots by `GlobalConfigHolder` and `JailConfigTracker` (updated automatically when the `.cfg` changes). `SettingsService` is the single writer to ConfigurationAdmin.
+
+**Runtime state (JCR)** — Bans and audit log remain JCR-backed as ephemeral runtime state. Settings root: `/settings/bruteforceloginprotection` (type `jnt:bruteForceLoginProtection`). Children are autocreated.
 
 | Path | Node type | Purpose |
 |------|-----------|---------|
-| `.` | `jnt:bruteForceLoginProtection` | Global settings (activated, whitelist, ignore patterns, proxy header trust, email + webhook config, audit cap, recidive factor, max ban time) |
-| `./jails/<name>` | `jnt:bruteForceLoginProtectionJail` | Per-jail config: `enabled`, `max_retry`, `find_time_seconds`, `ban_time_seconds` |
+| `.` | `jnt:bruteForceLoginProtection` | Parent node only (global settings properties no longer read; settings live in OSGi config) |
 | `./bans/<id>` | `jnt:bruteForceLoginProtectionBan` | Persistent ban record: `ip`, `jail`, `source`, `banned_at`, `banned_until`, `ban_count` (recidive counter), `reason` |
 | `./auditLog/<id>` | `jnt:bruteForceLoginProtectionAuditEntry` | `timestamp`, `event`, `ip`, `jail`, `source`, `details` |
 
-Container node types `jnt:bruteForceLoginProtectionJails`, `…Bans`, `…AuditLog` (all `jnt:contentFolder`) hold the children.
-
-`SettingsService` is the single writer; `BruteForceTracker` reads via cached snapshots and reloads on mutation.
+Container node types `jnt:bruteForceLoginProtectionBans`, `…AuditLog` (all `jnt:contentFolder`) hold the children. `BruteForceTracker` writes bans and `AuditLogger` writes audit entries; JCR bans are reconciled at startup with Hazelcast (see ADR 0004).
 
 ## Distributed state
 
@@ -155,7 +166,7 @@ yarn report:merge && yarn report:html   # merge mochawesome JSON → HTML report
 - **Breaking change from v2.x.** Both the JCR schema (new node types, no `nb_failed_login_max` / `time_to_idle`) and the GraphQL schema are incompatible. No automatic migration — v2 settings must be re-entered.
 - **Hazelcast port collision.** The module binds at `bindPort + 2`. If another Jahia module (e.g. `distributed-sessions`) already claims that offset, the cluster fails to form — override `cluster.hazelcastbflp.bindPort` explicitly in `jahia.properties`.
 - **`bantime` vs `findTime`.** `find_time_seconds` is the sliding window size used to *count* failures, `ban_time_seconds` is how long a ban lasts. They are independent — a long ban time with a short find-time is fine.
-- **Recidive escalation.** Re-banning the same IP increments `ban_count`; the next ban duration is roughly `banTime * (recidiveFactor ^ (banCount-1))`, capped by `max_ban_time_seconds` (default 7d). Set `recidiveFactor = 1.0` to disable escalation.
+- **Recidive escalation.** When an IP is banned again, `ban_count` increments. The next ban duration is computed by `RecidiveCalculator.next(prevBanCount, banTimeSec, factor, capSec)`, which multiplies `banTime * factor^prevBanCount`, capped by `maxBanTimeSeconds` (default 7d). For example, with `banTime=600s` (10m), `factor=2.0`, `prevBanCount=2`: next duration = 600 * 2^2 = 2400s (40m). Set `factor = 1.0` to disable escalation.
 - **Webhook signature.** Receivers MUST compare against header `X-BFLP-Signature: sha256=<hex>`, computed as HMAC-SHA256 of the raw body using `webhook_secret`. Empty secret = no signature header sent.
 - **`webhookSecret` tri-state.** `null` keeps the stored secret, `""` clears it, anything else overwrites it. Don't echo the current secret back to the UI — the UI sends `null` to mean "unchanged".
 - **`X-Forwarded-For` is not trusted by default.** Set `trust_x_forwarded_for=true` only when Jahia sits behind a trusted reverse proxy; otherwise attackers can rotate the header to evade the counter.

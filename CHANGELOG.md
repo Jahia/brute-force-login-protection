@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.2-SNAPSHOT] — Unreleased
 
-### Fixed
-- (placeholder for patch fixes)
+### Added
+
+- **Startup reconciliation of JCR bans:** On cluster node join, the module now reconciles the authoritative Hazelcast `bflp:bans` map with the JCR mirror. Stale JCR ban nodes (expired TTL) are dropped; live bans whose Hazelcast TTL did not survive a full cluster restart are restored into the map. This is best-effort; any JCR failure is logged and does not block component activation (see ADR 0004).
+- **Test mutations:** New GraphQL mutations `bruteForceLoginProtectionTestEmail` and `bruteForceLoginProtectionTestWebhook` allow operators to synchronously verify email and webhook integrations without triggering a live ban event.
 
 ### Changed
-- (placeholder for non-breaking changes)
+
+- **saveGlobalSettings mutation:** Now accepts `trustedProxyCidrs` parameter (list of CIDR entries) to validate the remote socket address against when honoring `X-Forwarded-For` headers (improves reverse-proxy support for multi-CIDR setups).
+- **Docs and ADRs:** Updated AGENTS.md GraphQL API table to list all query/mutation signatures and arguments. ADR 0004 now reflects the implemented startup reconciliation pass (moved from "Future Improvements" to "Rationale").
+
+### Fixed
+
+- (no bug fixes in this snapshot)
 
 ## [3.0.0] — 2025-12-31
 
@@ -51,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - All user inputs are validated and sanitized (CIDR, LDAP filter escaping, JCR filter escaping).
-- Webhook secret is encrypted at rest in JCR.
+- Webhook secret is encrypted at rest in the OSGi `.cfg` file using Jahia's `EncryptionUtils` with `{enc}` prefix.
 - Webhook HTTP receiver addresses are validated to reject SSRF targets (loopback, private ranges, AWS metadata).
 - HMAC-SHA256 webhook signatures are computed over the raw body; receivers must use constant-time comparison.
 - X-Forwarded-For parsing is safe against IP-literal spoofing and truncation attacks.

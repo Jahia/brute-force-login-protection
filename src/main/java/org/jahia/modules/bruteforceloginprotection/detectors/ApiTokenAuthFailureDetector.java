@@ -19,10 +19,10 @@ public class ApiTokenAuthFailureDetector implements AuthFailureDetector {
 
     @Override
     public FailureSignal detect(AuthFailureContext context) {
-        if (context.isAuthenticated()) {
+        if (context.authenticated()) {
             return null;
         }
-        String authHeader = context.getRequest().getHeader("Authorization");
+        String authHeader = context.request().getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith(APITOKEN_PREFIX)) {
             return null;
         }

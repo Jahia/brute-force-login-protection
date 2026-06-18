@@ -12,10 +12,10 @@ package org.jahia.modules.bruteforceloginprotection.spi;
  * &#64;Component(service = AuthFailureDetector.class)
  * public class MySchemeDetector implements AuthFailureDetector {
  *     public FailureSignal detect(AuthFailureContext ctx) {
- *         if (ctx.isAuthenticated()) {
+ *         if (ctx.authenticated()) {
  *             return null;
  *         }
- *         if (!"MyScheme".equals(ctx.getRequest().getHeader("X-Auth-Scheme"))) {
+ *         if (!"MyScheme".equals(ctx.request().getHeader("X-Auth-Scheme"))) {
  *             return null;
  *         }
  *         return FailureSignal.builder("my-scheme").extra("authScheme", "myscheme").build();

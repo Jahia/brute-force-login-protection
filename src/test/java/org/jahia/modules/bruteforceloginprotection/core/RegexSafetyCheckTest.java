@@ -25,7 +25,8 @@ public class RegexSafetyCheckTest {
 
     @Test
     public void overLengthPatternRejected() {
-        assertThatThrownBy(() -> RegexSafetyCheck.assertSafe(repeat("a", RegexSafetyCheck.MAX_PATTERN_LENGTH + 1)))
+        String tooLong = repeat("a", RegexSafetyCheck.MAX_PATTERN_LENGTH + 1);
+        assertThatThrownBy(() -> RegexSafetyCheck.assertSafe(tooLong))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("exceeds");
     }
@@ -44,12 +45,42 @@ public class RegexSafetyCheckTest {
     }
 
     @Test
-    public void nestedQuantifierRejected() {
-        // a group close followed by two stacked quantifiers is the classic catastrophic-backtracking smell
+    public void nestedQuantifierDoubleStackRejected_star() {
+        // group-close followed by two stacked quantifiers
         assertThatThrownBy(() -> RegexSafetyCheck.assertSafe("(x)*+"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    public void nestedQuantifierDoubleStackRejected_plus() {
         assertThatThrownBy(() -> RegexSafetyCheck.assertSafe("(y)++"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    public void nestedQuantifierSingleQuantifierOnGroupRejected() {
+        // (a+)+ is the canonical catastrophic-backtracking (ReDoS) pattern
+        assertThatThrownBy(() -> RegexSafetyCheck.assertSafe("(a+)+"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    public void nestedQuantifierSingleQuantifierOnGroupRejected_star() {
+        assertThatThrownBy(() -> RegexSafetyCheck.assertSafe("(a+)*"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    public void escapedClosingParenFollowedByQuantifierAccepted() {
+        // \)+ matches a literal ')' character one or more times — not a group close.
+        // The preceding backslash escapes ')', so this must NOT be flagged as a nested quantifier.
+        assertThatCode(() -> RegexSafetyCheck.assertSafe("\\)+")).doesNotThrowAnyException();
+    }
+
+    @Test
+    public void escapedClosingParenInLargerPatternAccepted() {
+        // \d+\)? — one-or-more digits optionally followed by a literal ')'. Safe pattern.
+        assertThatCode(() -> RegexSafetyCheck.assertSafe("\\d+\\)?")).doesNotThrowAnyException();
     }
 
     @Test

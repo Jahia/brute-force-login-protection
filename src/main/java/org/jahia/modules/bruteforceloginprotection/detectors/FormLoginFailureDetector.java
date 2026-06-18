@@ -19,7 +19,7 @@ public class FormLoginFailureDetector implements AuthFailureDetector {
 
     @Override
     public FailureSignal detect(AuthFailureContext context) {
-        HttpServletRequest request = context.getRequest();
+        HttpServletRequest request = context.request();
         Object result = request.getAttribute(LoginEngineAuthValveImpl.VALVE_RESULT);
         if (result == null) {
             return null;

@@ -60,8 +60,15 @@ export const formatDuration = seconds => {
     return remM === 0 ? `${h}h` : `${h}h ${remM}m`;
 };
 
-// Basic CIDR sanity check (IPv4 or IPv6/n). Strict-ish, mirrors backend lenience.
-const CIDR_REGEX = /^(?:(?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}|[0-9a-fA-F:]+\/\d{1,3})$/;
+// CIDR sanity check (IPv4 or IPv6/n).
+// IPv4: each octet 0-255 and prefix length 0-32.
+// IPv6: hex/':' groups with prefix length 0-128.
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'; // 0-255
+const IPV4_PREFIX = '(?:3[0-2]|[12]?\\d)'; // 0-32
+const IPV6_PREFIX = '(?:12[0-8]|1[01]\\d|\\d?\\d)'; // 0-128
+const IPV4_CIDR = `(?:${OCTET}\\.){3}${OCTET}\\/${IPV4_PREFIX}`;
+const IPV6_CIDR = `[0-9a-fA-F:]+\\/${IPV6_PREFIX}`;
+const CIDR_REGEX = new RegExp(`^(?:${IPV4_CIDR}|${IPV6_CIDR})$`);
 
 export const validateWhitelist = value => {
     if (!value || !value.trim()) {

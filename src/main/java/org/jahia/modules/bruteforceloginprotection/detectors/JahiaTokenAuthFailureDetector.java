@@ -18,10 +18,10 @@ public class JahiaTokenAuthFailureDetector implements AuthFailureDetector {
 
     @Override
     public FailureSignal detect(AuthFailureContext context) {
-        if (context.isAuthenticated()) {
+        if (context.authenticated()) {
             return null;
         }
-        String token = context.getRequest().getHeader(HEADER);
+        String token = context.request().getHeader(HEADER);
         if (token == null || token.isEmpty()) {
             return null;
         }

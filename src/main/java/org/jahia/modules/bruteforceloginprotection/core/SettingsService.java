@@ -41,6 +41,11 @@ public class SettingsService {
     private static final int AUDIT_LOG_MIN = 100;
     private static final int AUDIT_LOG_MAX = 100_000;
 
+    // Sane upper bounds for jail numeric fields.
+    private static final int JAIL_MAX_RETRY_MAX = 10_000;
+    // ~10 years in seconds — rejects obviously absurd values while allowing very long windows/bans.
+    private static final int JAIL_TIME_SECONDS_MAX = 315_360_000;
+
     @Reference
     private ConfigurationAdmin configurationAdmin;
 
@@ -237,6 +242,12 @@ public class SettingsService {
         if (StringUtils.isBlank(name) || JailConfigTracker.isUnsafeJailName(name)) {
             return false;
         }
+        try {
+            validateJailNumericFields(maxRetry, findTimeSeconds, banTimeSeconds);
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn("BFLP: rejected jail '{}' — {}", name, ex.getMessage());
+            return false;
+        }
         if (configurationAdmin == null) {
             LOGGER.error("BFLP: ConfigurationAdmin unavailable; cannot persist jail '{}'", name);
             return false;
@@ -267,6 +278,22 @@ public class SettingsService {
         } catch (IOException | InvalidSyntaxException e) {
             LOGGER.error("BFLP: error saving jail '{}'", AuditLogger.sanitize(name), e);
             return false;
+        }
+    }
+
+    /**
+     * Validates jail numeric fields against sane upper bounds before any I/O is attempted.
+     * Throws {@link IllegalArgumentException} on the first out-of-range value found.
+     */
+    static void validateJailNumericFields(Integer maxRetry, Integer findTimeSeconds, Integer banTimeSeconds) {
+        if (maxRetry != null && maxRetry > 0 && maxRetry > JAIL_MAX_RETRY_MAX) {
+            throw new IllegalArgumentException("maxRetry exceeds maximum allowed value of " + JAIL_MAX_RETRY_MAX);
+        }
+        if (findTimeSeconds != null && findTimeSeconds > 0 && findTimeSeconds > JAIL_TIME_SECONDS_MAX) {
+            throw new IllegalArgumentException("findTimeSeconds exceeds maximum allowed value of " + JAIL_TIME_SECONDS_MAX);
+        }
+        if (banTimeSeconds != null && banTimeSeconds > 0 && banTimeSeconds > JAIL_TIME_SECONDS_MAX) {
+            throw new IllegalArgumentException("banTimeSeconds exceeds maximum allowed value of " + JAIL_TIME_SECONDS_MAX);
         }
     }
 

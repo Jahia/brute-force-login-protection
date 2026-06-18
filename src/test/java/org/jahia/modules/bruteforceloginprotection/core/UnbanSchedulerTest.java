@@ -4,22 +4,17 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import org.jahia.modules.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
-import org.jahia.services.content.JCRCallback;
-import org.jahia.services.content.JCRTemplate;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -185,7 +180,7 @@ public class UnbanSchedulerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    public void sweep_concurrentRemoval_doesNotDoubleDispatch() throws Exception {
+    public void sweep_concurrentRemoval_doesNotDoubleDispatch() {
         BanAction action = mock(BanAction.class);
         when(action.getName()).thenReturn("test");
         when(tracker.getBanActions()).thenReturn(List.of(action));

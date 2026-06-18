@@ -85,9 +85,10 @@ public class WebhookBanActionTest {
 
         String actual = hmacSha256Hex(body, secret);
 
-        assertThat(actual).isEqualTo(expected.toString());
-        assertThat(actual).hasSize(64); // SHA-256 = 32 bytes = 64 hex chars
-        assertThat(actual).matches("[0-9a-f]{64}");
+        assertThat(actual)
+                .isEqualTo(expected.toString())
+                .hasSize(64) // SHA-256 = 32 bytes = 64 hex chars
+                .matches("[0-9a-f]{64}");
     }
 
     @Test
@@ -116,7 +117,7 @@ public class WebhookBanActionTest {
 
     @Test
     public void jsonEscape_null_returnsEmpty() throws Exception {
-        assertThat(jsonEscape(null)).isEqualTo("");
+        assertThat(jsonEscape(null)).isEmpty();
     }
 
     @Test

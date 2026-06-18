@@ -40,8 +40,14 @@ public final class RegexSafetyCheck {
 
     private static void assertNoNestedQuantifiers(String pattern) {
         // crude lint: a group close followed by *,+,? then another quantifier is a smell.
+        // Skip positions where the group-close character is escaped (e.g. \)+ matches a
+        // literal ')' followed by '+', which is perfectly safe and must not be rejected).
+        boolean escaped = false;
         for (int i = 0; i < pattern.length() - 1; i++) {
-            if (isNestedQuantifierAt(pattern, i)) {
+            char c = pattern.charAt(i);
+            boolean wasEscaped = escaped;
+            escaped = !wasEscaped && c == '\\' && i + 1 < pattern.length();
+            if (!wasEscaped && isNestedQuantifierAt(pattern, i)) {
                 throw new IllegalArgumentException(
                         "Pattern contains nested quantifier at index " + i);
             }
@@ -57,6 +63,12 @@ public final class RegexSafetyCheck {
         if (next != '*' && next != '+' && next != '?' && next != '{') {
             return false;
         }
+        // Group-close followed by a single quantifier is the classic (a+)+ ReDoS form.
+        if (c == ')' && (next == '*' || next == '+' || next == '?')) {
+            return true;
+        }
+        // Curly-quantifier on a group, or possessive/reluctant double-quantifier: require a
+        // second quantifier character to be conservative and avoid false positives on }{.
         if (i + 2 >= pattern.length()) {
             return false;
         }
@@ -70,15 +82,11 @@ public final class RegexSafetyCheck {
         boolean escaped = false;
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
-            if (escaped) {
-                escaped = false;
-                continue;
+            boolean wasEscaped = escaped;
+            escaped = !wasEscaped && c == '\\' && i + 1 < pattern.length();
+            if (!wasEscaped && !escaped) {
+                depth = processGroupChar(c, depth, quantsAtDepth);
             }
-            if (c == '\\' && i + 1 < pattern.length()) {
-                escaped = true;
-                continue;
-            }
-            depth = processGroupChar(c, depth, quantsAtDepth);
         }
     }
 

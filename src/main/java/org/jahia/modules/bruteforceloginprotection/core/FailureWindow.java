@@ -2,7 +2,10 @@ package org.jahia.modules.bruteforceloginprotection.core;
 
 import java.io.Serializable;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.List;
 
 public class FailureWindow implements Serializable {
 
@@ -20,7 +23,9 @@ public class FailureWindow implements Serializable {
 
     public String getIp() { return ip; }
     public String getJailName() { return jailName; }
-    public Deque<Long> getTimestamps() { return timestamps; }
+
+    /** Returns an unmodifiable snapshot of the timestamps; callers cannot mutate internal state. */
+    public List<Long> getTimestamps() { return Collections.unmodifiableList(new ArrayList<>(timestamps)); }
 
     public void add(long ts) {
         timestamps.addLast(ts);
