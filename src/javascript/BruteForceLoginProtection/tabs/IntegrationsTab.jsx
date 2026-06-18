@@ -155,7 +155,7 @@ export const IntegrationsTab = () => {
 
     return (
         <div className={styles.bflp_tabPanel}>
-            <form onSubmit={handleSubmit}>
+            <form aria-label={t('integrations.formLabel')} onSubmit={handleSubmit}>
                 <div className={styles.bflp_subSection}>
                     <h3>{t('integrations.emailTitle')}</h3>
                     <div className={styles.bflp_fieldGroup}>
@@ -188,6 +188,7 @@ export const IntegrationsTab = () => {
                     </div>
                     <div className={styles.bflp_inlineActions}>
                         <button
+                        aria-describedby="bflp-int-test-email-hint"
                         className={styles.bflp_tableActionBtn}
                         disabled={testingEmail}
                         type="button"
@@ -195,7 +196,7 @@ export const IntegrationsTab = () => {
                         >
                             {testingEmail ? t('integrations.testEmailSending') : t('integrations.testEmail')}
                         </button>
-                        <p className={styles.bflp_hint}>{t('integrations.testEmailHint')}</p>
+                        <p className={styles.bflp_hint} id="bflp-int-test-email-hint">{t('integrations.testEmailHint')}</p>
                     </div>
                     {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
                     <div
@@ -259,6 +260,7 @@ export const IntegrationsTab = () => {
                     </div>
                     <div className={styles.bflp_inlineActions}>
                         <button
+                        aria-describedby="bflp-int-test-webhook-hint"
                         className={styles.bflp_tableActionBtn}
                         disabled={testingWebhook}
                         type="button"
@@ -266,7 +268,7 @@ export const IntegrationsTab = () => {
                         >
                             {testingWebhook ? t('integrations.testWebhookSending') : t('integrations.testWebhook')}
                         </button>
-                        <p className={styles.bflp_hint}>{t('integrations.testWebhookHint')}</p>
+                        <p className={styles.bflp_hint} id="bflp-int-test-webhook-hint">{t('integrations.testWebhookHint')}</p>
                     </div>
                     {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
                     <div

@@ -135,7 +135,7 @@ export const BansTab = () => {
                                 </label>
                                 <input
                                     required
-                                    aria-describedby={banFormError ? 'bflp-ban-ip-error' : undefined}
+                                    aria-describedby="bflp-ban-ip-error"
                                     aria-invalid={banFormError ? 'true' : undefined}
                                     aria-required="true"
                                     className={styles.bflp_input}
