@@ -11,8 +11,8 @@ public class GqlTestResult {
     private final String message;
 
     public GqlTestResult(IntegrationTestResult result) {
-        this.success = result.isSuccess();
-        this.message = result.getMessage();
+        this.success = result.success();
+        this.message = result.message();
     }
 
     @GraphQLField @GraphQLName("success")

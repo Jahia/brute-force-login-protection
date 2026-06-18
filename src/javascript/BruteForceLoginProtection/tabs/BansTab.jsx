@@ -1,11 +1,18 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
 import styles from '../BruteForceLoginProtection.scss';
 import {BAN_IP, GET_BANNED_IPS, UNBAN_IP} from '../BruteForceLoginProtection.gql';
+import {ConfirmDialog} from '../ConfirmDialog';
 import {StatusAlerts} from './StatusAlerts';
 import {formatDuration, formatEpoch, useTransientStatus} from './useTransientStatus';
+
+// Client-side IP syntax check (IPv4 or IPv6); the backend remains the source of truth.
+const IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const IPV6_REGEX = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{0,4}$/;
+
+const isValidIp = value => IPV4_REGEX.test(value) || (value.includes(':') && IPV6_REGEX.test(value));
 
 export const BansTab = () => {
     const {t} = useTranslation('brute-force-login-protection');
@@ -22,8 +29,20 @@ export const BansTab = () => {
         refetchQueries: ['GetBannedIps']
     });
     const [currentUnban, setCurrentUnban] = useState(null);
+    const [confirmUnban, setConfirmUnban] = useState(null); // IP awaiting unban confirmation
 
-    const handleUnban = async ip => {
+    // F-04: route the unban action through an accessible confirm dialog (AAA 3.3.6)
+    const handleUnbanRequest = ip => {
+        setConfirmUnban(ip);
+    };
+
+    const handleUnbanCancel = () => {
+        setConfirmUnban(null);
+    };
+
+    const handleUnbanConfirm = async () => {
+        const ip = confirmUnban;
+        setConfirmUnban(null);
         setCurrentUnban(ip);
         try {
             const r = await unbanIp({variables: {ip}});
@@ -39,19 +58,36 @@ export const BansTab = () => {
     const handleBan = async e => {
         e.preventDefault();
         setBanFormError(null);
-        if (!banForm.ip.trim()) {
+        const ip = banForm.ip.trim();
+        if (!ip) {
             setBanFormError(t('bans.ipRequired'));
             return;
         }
 
+        // F-05: client-side IP syntax validation with a friendly per-field error
+        if (!isValidIp(ip)) {
+            setBanFormError(t('bans.ipInvalid'));
+            return;
+        }
+
+        // F-07: only forward a duration when it parses to a positive integer
+        let durationSeconds;
+        if (banForm.durationSeconds) {
+            durationSeconds = Number.parseInt(banForm.durationSeconds, 10);
+            if (!Number.isInteger(durationSeconds) || durationSeconds < 1) {
+                setBanFormError(t('bans.durationInvalid'));
+                return;
+            }
+        }
+
         try {
-            const variables = {ip: banForm.ip.trim()};
+            const variables = {ip};
             if (banForm.jail.trim()) {
                 variables.jail = banForm.jail.trim();
             }
 
-            if (banForm.durationSeconds) {
-                variables.durationSeconds = Number.parseInt(banForm.durationSeconds, 10);
+            if (durationSeconds !== undefined) {
+                variables.durationSeconds = durationSeconds;
             }
 
             if (banForm.reason.trim()) {
@@ -71,8 +107,12 @@ export const BansTab = () => {
         }
     };
 
-    const bans = [...(data?.bruteForceLoginProtectionBannedIps || [])]
-        .sort((a, b) => Number(b.bannedAt) - Number(a.bannedAt));
+    // F-06: memoize the sort so it doesn't run on every render
+    const bans = useMemo(
+        () => [...(data?.bruteForceLoginProtectionBannedIps || [])]
+            .sort((a, b) => Number(b.bannedAt) - Number(a.bannedAt)),
+        [data]
+    );
 
     return (
         <div className={styles.bflp_tabPanel}>
@@ -198,7 +238,7 @@ export const BansTab = () => {
                     </thead>
                     <tbody>
                         {bans.map(b => (
-                            <tr key={`${b.ip}@${b.jail}`}>
+                            <tr key={`${b.ip}@${b.jail || ''}@${b.bannedAt}`}>
                                 <td className={styles.bflp_ipCell}>{b.ip}</td>
                                 <td>{b.jail}</td>
                                 <td>
@@ -220,7 +260,7 @@ export const BansTab = () => {
                                         className={styles.bflp_tableActionBtn}
                                         disabled={unbanning && currentUnban === b.ip}
                                         type="button"
-                                        onClick={() => handleUnban(b.ip)}
+                                        onClick={() => handleUnbanRequest(b.ip)}
                                     >
                                         {unbanning && currentUnban === b.ip ? t('bans.unbanning') : t('bans.unban')}
                                     </button>
@@ -230,6 +270,14 @@ export const BansTab = () => {
                     </tbody>
                 </table>
             )}
+
+            {/* F-04: accessible confirm dialog for unban (AAA 3.3.6) */}
+            <ConfirmDialog
+                isOpen={Boolean(confirmUnban)}
+                message={t('bans.unbanConfirm', {ip: confirmUnban})}
+                onCancel={handleUnbanCancel}
+                onConfirm={handleUnbanConfirm}
+            />
         </div>
     );
 };

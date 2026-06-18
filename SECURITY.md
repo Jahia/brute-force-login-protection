@@ -42,7 +42,7 @@ The audit log is **bounded by the `audit_log_max_entries` setting** (default: 10
 
 - Only administrators should have read/list permissions on audit data
 - Consider implementing a separate "auditor" role with read-only access if your organization requires non-admin audit visibility
-- Restrict write access (ban/unban/config changes) to a minimal set of operators via the coarse-grained `admin` permission required by all GraphQL mutations
+- Restrict write access (ban/unban/config changes) to a minimal set of operators via the `bruteForceLoginProtectionAdmin` permission required by all GraphQL mutations (declared in `roles.xml`, can be granted independently of full `administrationAccess`)
 
 ### GDPR Considerations
 
@@ -56,8 +56,9 @@ If your Jahia instance is subject to GDPR (or similar data protection regulation
 
 ### Webhook and Email Notifications
 
-Webhook payloads and email notifications also contain IP addresses and may reference usernames (via the ban reason or jail name). Ensure webhook receivers are:
+Webhook payloads and email notifications also contain IP addresses and may reference usernames (via the ban reason or jail name). The webhook secret is encrypted at rest in the OSGi `.cfg` file (using Jahia's `EncryptionUtils` with an `{enc}` prefix). Ensure webhook receivers are:
 
 - **Encrypted in transit** (HTTPS/TLS; the module rejects plaintext `http://` for remote receivers by default)
 - **Restricted to trusted endpoints** (use allowlists to prevent SSRF)
 - **Configured to handle PII securely** (do not log full payloads to stdout; encrypt at rest if persisted)
+- **Using constant-time comparison** when validating the `X-BFLP-Signature: sha256=<hex>` header to prevent timing attacks

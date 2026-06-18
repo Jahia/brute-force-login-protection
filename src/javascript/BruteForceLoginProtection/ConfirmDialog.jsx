@@ -16,23 +16,31 @@ export const ConfirmDialog = ({isOpen, message, onConfirm, onCancel}) => {
     const {t} = useTranslation('brute-force-login-protection');
     const cancelRef = useRef(null);
     const confirmRef = useRef(null);
-    const previousFocusRef = useRef(null);
 
-    // Capture the previously-focused element when opening
+    // Capture the previously-focused element on open, move focus into the
+    // dialog, and reliably restore focus to the trigger when the dialog closes
+    // or unmounts (effect cleanup covers both isOpen=false and unmount).
     useEffect(() => {
-        if (isOpen) {
-            previousFocusRef.current = document.activeElement;
-            // Defer so the dialog is rendered before we focus
-            requestAnimationFrame(() => {
-                cancelRef.current?.focus();
-            });
-        } else if (previousFocusRef.current) {
-            previousFocusRef.current.focus();
-            previousFocusRef.current = null;
+        if (!isOpen) {
+            return undefined;
         }
+
+        const previouslyFocused = document.activeElement;
+
+        // Defer so the dialog is rendered before we focus
+        const raf = requestAnimationFrame(() => {
+            cancelRef.current?.focus();
+        });
+
+        return () => {
+            cancelAnimationFrame(raf);
+            if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+                previouslyFocused.focus();
+            }
+        };
     }, [isOpen]);
 
-    // Focus trap: keep Tab/Shift-Tab inside the dialog
+    // Focus trap: keep Tab/Shift-Tab inside the dialog; Escape always cancels.
     const handleKeyDown = useCallback(e => {
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -45,7 +53,12 @@ export const ConfirmDialog = ({isOpen, message, onConfirm, onCancel}) => {
         }
 
         const focusable = [cancelRef.current, confirmRef.current].filter(Boolean);
-        if (focusable.length === 0) {
+
+        // Fewer than two targets: keep focus pinned to the only one (or the
+        // dialog) rather than letting Tab escape the modal.
+        if (focusable.length < 2) {
+            e.preventDefault();
+            focusable[0]?.focus();
             return;
         }
 
@@ -68,18 +81,17 @@ export const ConfirmDialog = ({isOpen, message, onConfirm, onCancel}) => {
     }
 
     return (
-        /* Backdrop */
-        <div
-            className={styles.bflp_dialogBackdrop}
-            onClick={onCancel}
-        >
-            {/* Dialog panel — stop click propagation to backdrop */}
+        /*
+         * Presentational backdrop only — dismissal is via Escape or the explicit
+         * Cancel/Confirm buttons. A bare click-to-dismiss div would have no role
+         * or keyboard equivalent, so it is intentionally not interactive.
+         */
+        <div className={styles.bflp_dialogBackdrop}>
             <div
                 aria-labelledby="bflp-dialog-title"
                 aria-modal="true"
                 className={styles.bflp_dialog}
                 role="dialog"
-                onClick={e => e.stopPropagation()}
                 onKeyDown={handleKeyDown}
             >
                 <h2 className={styles.bflp_dialogTitle} id="bflp-dialog-title">

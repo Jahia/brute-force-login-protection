@@ -30,6 +30,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component(immediate = true, service = {BanAction.class, WebhookBanAction.class})
 public class WebhookBanAction implements BanAction {
@@ -112,7 +113,7 @@ public class WebhookBanAction implements BanAction {
         if (webhookExecutor == null) {
             return;
         }
-        final HttpURLConnection[] connHolder = new HttpURLConnection[1];
+        final AtomicReference<HttpURLConnection> connHolder = new AtomicReference<>();
         Future<Void> future = webhookExecutor.submit(() -> {
             deliver(url, pinned, body, secret, connHolder);
             return null;
@@ -121,7 +122,7 @@ public class WebhookBanAction implements BanAction {
             future.get(OVERALL_DEADLINE_SEC, TimeUnit.SECONDS);
         } catch (TimeoutException te) {
             future.cancel(true);
-            HttpURLConnection conn = connHolder[0];
+            HttpURLConnection conn = connHolder.get();
             if (conn != null) {
                 try { conn.disconnect(); } catch (Exception ignored) { /* best-effort */ }
             }
@@ -176,10 +177,10 @@ public class WebhookBanAction implements BanAction {
         }
     }
 
-    private static void deliver(String url, InetAddress pinned, String body, String secret, HttpURLConnection[] connHolder) {
+    private static void deliver(String url, InetAddress pinned, String body, String secret, AtomicReference<HttpURLConnection> connHolder) {
         try {
             HttpURLConnection conn = openConnection(url, pinned);
-            connHolder[0] = conn;
+            connHolder.set(conn);
             int code = sendPost(conn, body, secret);
             if (code >= 300) {
                 LOGGER.warn("BFLP: webhook returned status {}", code);
@@ -258,13 +259,23 @@ public class WebhookBanAction implements BanAction {
         sb.append("\"text\":\"").append(jsonEscape(text)).append("\",");
         sb.append("\"ip\":\"").append(jsonEscape(ctx.getIp())).append("\",");
         sb.append("\"jail\":\"").append(jsonEscape(ctx.getJailName())).append("\",");
-        sb.append("\"source\":\"").append(jsonEscape(ctx.getSourceName())).append("\",");
+        sb.append("\"source\":").append(jsonNullableString(ctx.getSourceName())).append(",");
         sb.append("\"banCount\":").append(ctx.getBanCount()).append(",");
         sb.append("\"bannedAt\":").append(ctx.getBannedAt()).append(",");
         sb.append("\"bannedUntil\":").append(ctx.getBannedUntil()).append(",");
-        sb.append("\"reason\":\"").append(jsonEscape(ctx.getReason())).append("\"");
+        sb.append("\"reason\":").append(jsonNullableString(ctx.getReason()));
         sb.append("}");
         return sb.toString();
+    }
+
+    /**
+     * Returns the JSON representation of a nullable string field: {@code null} literal when the
+     * value is absent, or a quoted and escaped JSON string when present. This lets consumers
+     * distinguish a missing value from an explicitly empty string.
+     */
+    private static String jsonNullableString(String s) {
+        if (s == null) return "null";
+        return "\"" + jsonEscape(s) + "\"";
     }
 
     private static String jsonEscape(String s) {

@@ -1,14 +1,10 @@
 package org.jahia.modules.bruteforceloginprotection.core;
 
-public final class IntegrationTestResult {
-
-    private final boolean success;
-    private final String message;
-
-    public IntegrationTestResult(boolean success, String message) {
-        this.success = success;
-        this.message = message;
-    }
+/**
+ * Immutable outcome of an integration "send test" (email or webhook), surfaced to the admin UI
+ * via the {@code testEmail}/{@code testWebhook} GraphQL mutations.
+ */
+public record IntegrationTestResult(boolean success, String message) {
 
     public static IntegrationTestResult ok(String message) {
         return new IntegrationTestResult(true, message);
@@ -16,13 +12,5 @@ public final class IntegrationTestResult {
 
     public static IntegrationTestResult fail(String message) {
         return new IntegrationTestResult(false, message);
-    }
-
-    public boolean isSuccess() {
-        return success;
-    }
-
-    public String getMessage() {
-        return message;
     }
 }

@@ -57,6 +57,12 @@ public final class RegexSafetyCheck {
         if (next != '*' && next != '+' && next != '?' && next != '{') {
             return false;
         }
+        // Group-close followed by a single quantifier is the classic (a+)+ ReDoS form.
+        if (c == ')' && (next == '*' || next == '+' || next == '?')) {
+            return true;
+        }
+        // Curly-quantifier on a group, or possessive/reluctant double-quantifier: require a
+        // second quantifier character to be conservative and avoid false positives on }{.
         if (i + 2 >= pattern.length()) {
             return false;
         }
@@ -70,15 +76,11 @@ public final class RegexSafetyCheck {
         boolean escaped = false;
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
-            if (escaped) {
-                escaped = false;
-                continue;
+            boolean wasEscaped = escaped;
+            escaped = !wasEscaped && c == '\\' && i + 1 < pattern.length();
+            if (!wasEscaped && !escaped) {
+                depth = processGroupChar(c, depth, quantsAtDepth);
             }
-            if (c == '\\' && i + 1 < pattern.length()) {
-                escaped = true;
-                continue;
-            }
-            depth = processGroupChar(c, depth, quantsAtDepth);
         }
     }
 

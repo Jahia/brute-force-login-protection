@@ -52,7 +52,15 @@ export const GeneralTab = () => {
     const validate = () => {
         const next = {};
         if (form.whitelistIps && !validateWhitelist(form.whitelistIps)) {
-            next.whitelistIps = t('general.whitelistIpsInvalid');
+            // F-11: surface the specific entry that failed validation
+            const offending = form.whitelistIps
+                .split(',')
+                .map(part => part.trim())
+                .filter(Boolean)
+                .find(part => !validateWhitelist(part));
+            next.whitelistIps = offending ?
+                t('general.whitelistIpsInvalidEntry', {entry: offending}) :
+                t('general.whitelistIpsInvalid');
         }
 
         if (!(Number(form.recidiveFactor) >= 1.0)) {

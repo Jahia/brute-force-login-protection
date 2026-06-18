@@ -87,6 +87,8 @@ other value replaces it.
 Default example `.cfg` files are shipped under `src/main/resources/META-INF/configurations/`
 and are dropped into `karaf/etc/` on first deploy.
 
+**Configuration file protection:** Shipped `.cfg` files MUST start with the exact line `# default configuration - won't be overridden` to prevent Jahia's module extender from overwriting operator changes deployed to `karaf/etc` on every module restart or redeployment.
+
 ### Cluster behaviour
 
 OSGi `ConfigurationAdmin` storage is per-node. In a Jahia cluster you must either:

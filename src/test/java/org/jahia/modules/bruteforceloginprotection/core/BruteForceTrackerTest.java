@@ -76,6 +76,10 @@ public class BruteForceTrackerTest {
 
         when(bansMap.get(anyString())).thenAnswer(inv -> bansStore.get((String) inv.getArgument(0)));
         when(bansMap.remove(anyString())).thenAnswer(inv -> bansStore.remove((String) inv.getArgument(0)));
+        // Value-checked overload used by isIpCurrentlyBanned's expired-entry backstop to avoid
+        // evicting a concurrently re-installed fresh ban.
+        when(bansMap.remove(anyString(), any())).thenAnswer(inv ->
+                bansStore.remove(inv.getArgument(0), inv.getArgument(1)));
         when(bansMap.put(anyString(), any(BannedIp.class), anyLong(), any(TimeUnit.class)))
                 .thenAnswer(inv -> bansStore.put(inv.getArgument(0), inv.getArgument(1)));
         when(bansMap.putIfAbsent(anyString(), any(BannedIp.class), anyLong(), any(TimeUnit.class)))

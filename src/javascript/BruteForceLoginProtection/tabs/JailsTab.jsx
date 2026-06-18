@@ -6,7 +6,7 @@ import styles from '../BruteForceLoginProtection.scss';
 import {DELETE_JAIL, GET_JAILS, SAVE_JAIL} from '../BruteForceLoginProtection.gql';
 import {ConfirmDialog} from '../ConfirmDialog';
 import {StatusAlerts} from './StatusAlerts';
-import {useTransientStatus} from './useTransientStatus';
+import {formatDuration, useTransientStatus} from './useTransientStatus';
 
 const EMPTY_FORM = {
     name: '',
@@ -22,6 +22,7 @@ export const JailsTab = () => {
     const [status, setStatus] = useTransientStatus();
     const [editingForm, setEditingForm] = useState(null);
     const [nameError, setNameError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState({}); // {maxRetry, findTimeSeconds, banTimeSeconds}
     const [confirmDelete, setConfirmDelete] = useState(null); // Jail name to delete
 
     const {data, loading} = useQuery(GET_JAILS, {fetchPolicy: 'network-only'});
@@ -35,9 +36,32 @@ export const JailsTab = () => {
     const handleSave = async e => {
         e.preventDefault();
         setNameError('');
+        setFieldErrors({});
         // F-05: surface jail-name validation error
         if (!editingForm.name.trim()) {
             setNameError(t('jails.nameRequired'));
+            return;
+        }
+
+        // F-08: JS-side bounds validation for the numeric thresholds
+        const maxRetry = Number.parseInt(editingForm.maxRetry, 10);
+        const findTimeSeconds = Number.parseInt(editingForm.findTimeSeconds, 10);
+        const banTimeSeconds = Number.parseInt(editingForm.banTimeSeconds, 10);
+        const nextErrors = {};
+        if (!Number.isInteger(maxRetry) || maxRetry < 1) {
+            nextErrors.maxRetry = t('jails.maxRetryInvalid');
+        }
+
+        if (!Number.isInteger(findTimeSeconds) || findTimeSeconds < 1) {
+            nextErrors.findTimeSeconds = t('jails.findTimeSecondsInvalid');
+        }
+
+        if (!Number.isInteger(banTimeSeconds) || banTimeSeconds < 1) {
+            nextErrors.banTimeSeconds = t('jails.banTimeSecondsInvalid');
+        }
+
+        if (Object.keys(nextErrors).length > 0) {
+            setFieldErrors(nextErrors);
             return;
         }
 
@@ -46,9 +70,9 @@ export const JailsTab = () => {
                 variables: {
                     name: editingForm.name.trim(),
                     enabled: editingForm.enabled,
-                    maxRetry: Number.parseInt(editingForm.maxRetry, 10),
-                    findTimeSeconds: Number.parseInt(editingForm.findTimeSeconds, 10),
-                    banTimeSeconds: Number.parseInt(editingForm.banTimeSeconds, 10)
+                    maxRetry,
+                    findTimeSeconds,
+                    banTimeSeconds
                 }
             });
             if (result.data?.bruteForceLoginProtectionSaveJail) {
@@ -170,36 +194,81 @@ export const JailsTab = () => {
                         <div className={styles.bflp_fieldRow}>
                             <div className={styles.bflp_fieldGroup}>
                                 <label className={styles.bflp_label} htmlFor="bflp-jail-maxretry">{t('jails.maxRetry')}</label>
+                                {/* F-09: unit/meaning hint */}
+                                <p className={styles.bflp_hint} id="bflp-jail-maxretry-hint">{t('jails.maxRetryHint')}</p>
                                 <input
+                                    aria-describedby={fieldErrors.maxRetry ? 'bflp-jail-maxretry-hint bflp-jail-maxretry-error' : 'bflp-jail-maxretry-hint'}
+                                    aria-invalid={fieldErrors.maxRetry ? 'true' : undefined}
                                     className={styles.bflp_input}
                                     id="bflp-jail-maxretry"
                                     min="1"
                                     type="number"
                                     value={editingForm.maxRetry}
-                                    onChange={e => setEditingForm(prev => ({...prev, maxRetry: e.target.value}))}
+                                    onChange={e => {
+                                        setFieldErrors(prev => ({...prev, maxRetry: undefined}));
+                                        setEditingForm(prev => ({...prev, maxRetry: e.target.value}));
+                                    }}
                                 />
+                                <p
+                                    aria-atomic="true"
+                                    aria-live="polite"
+                                    className={styles.bflp_fieldError}
+                                    id="bflp-jail-maxretry-error"
+                                >
+                                    {fieldErrors.maxRetry || ''}
+                                </p>
                             </div>
                             <div className={styles.bflp_fieldGroup}>
                                 <label className={styles.bflp_label} htmlFor="bflp-jail-findtime">{t('jails.findTimeSeconds')}</label>
+                                {/* F-09: unit/meaning hint */}
+                                <p className={styles.bflp_hint} id="bflp-jail-findtime-hint">{t('jails.findTimeSecondsHint')}</p>
                                 <input
+                                    aria-describedby={fieldErrors.findTimeSeconds ? 'bflp-jail-findtime-hint bflp-jail-findtime-error' : 'bflp-jail-findtime-hint'}
+                                    aria-invalid={fieldErrors.findTimeSeconds ? 'true' : undefined}
                                     className={styles.bflp_input}
                                     id="bflp-jail-findtime"
                                     min="1"
                                     type="number"
                                     value={editingForm.findTimeSeconds}
-                                    onChange={e => setEditingForm(prev => ({...prev, findTimeSeconds: e.target.value}))}
+                                    onChange={e => {
+                                        setFieldErrors(prev => ({...prev, findTimeSeconds: undefined}));
+                                        setEditingForm(prev => ({...prev, findTimeSeconds: e.target.value}));
+                                    }}
                                 />
+                                <p
+                                    aria-atomic="true"
+                                    aria-live="polite"
+                                    className={styles.bflp_fieldError}
+                                    id="bflp-jail-findtime-error"
+                                >
+                                    {fieldErrors.findTimeSeconds || ''}
+                                </p>
                             </div>
                             <div className={styles.bflp_fieldGroup}>
                                 <label className={styles.bflp_label} htmlFor="bflp-jail-bantime">{t('jails.banTimeSeconds')}</label>
+                                {/* F-09: unit/meaning hint */}
+                                <p className={styles.bflp_hint} id="bflp-jail-bantime-hint">{t('jails.banTimeSecondsHint')}</p>
                                 <input
+                                    aria-describedby={fieldErrors.banTimeSeconds ? 'bflp-jail-bantime-hint bflp-jail-bantime-error' : 'bflp-jail-bantime-hint'}
+                                    aria-invalid={fieldErrors.banTimeSeconds ? 'true' : undefined}
                                     className={styles.bflp_input}
                                     id="bflp-jail-bantime"
                                     min="1"
                                     type="number"
                                     value={editingForm.banTimeSeconds}
-                                    onChange={e => setEditingForm(prev => ({...prev, banTimeSeconds: e.target.value}))}
+                                    onChange={e => {
+                                        setFieldErrors(prev => ({...prev, banTimeSeconds: undefined}));
+                                        setEditingForm(prev => ({...prev, banTimeSeconds: e.target.value}));
+                                    }}
                                 />
+                                <p
+                                    aria-atomic="true"
+                                    aria-live="polite"
+                                    className={styles.bflp_fieldError}
+                                    id="bflp-jail-bantime-error"
+                                >
+                                    {fieldErrors.banTimeSeconds || ''}
+                                </p>
                             </div>
                         </div>
                     </fieldset>
@@ -217,6 +286,7 @@ export const JailsTab = () => {
                             variant="default"
                             onClick={() => {
                                 setNameError('');
+                                setFieldErrors({});
                                 setEditingForm(null);
                             }}
                         />
@@ -252,8 +322,9 @@ export const JailsTab = () => {
                                     </span>
                                 </td>
                                 <td>{j.maxRetry}</td>
-                                <td>{j.findTimeSeconds}</td>
-                                <td>{j.banTimeSeconds}</td>
+                                {/* F-10: human-readable durations */}
+                                <td>{formatDuration(j.findTimeSeconds)}</td>
+                                <td>{formatDuration(j.banTimeSeconds)}</td>
                                 {/* F-21/F-28: table action buttons >=44x44 via bflp_tableActionBtn */}
                                 <td>
                                     <button

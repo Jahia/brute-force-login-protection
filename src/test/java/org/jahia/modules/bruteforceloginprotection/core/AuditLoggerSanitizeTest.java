@@ -25,6 +25,6 @@ public class AuditLoggerSanitizeTest {
     @Test
     public void plainValueUnchanged() {
         assertThat(AuditLogger.sanitize("admin")).isEqualTo("admin");
-        assertThat(AuditLogger.sanitize("")).isEqualTo("");
+        assertThat(AuditLogger.sanitize("")).isEmpty();
     }
 }

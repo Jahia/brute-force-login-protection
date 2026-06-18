@@ -33,7 +33,7 @@ public class EmailBanActionTest {
 
     @Test
     public void stripHeaderInjection_emptyString_returnsEmpty() {
-        assertThat(EmailBanAction.stripHeaderInjection("")).isEqualTo("");
+        assertThat(EmailBanAction.stripHeaderInjection("")).isEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -94,8 +94,8 @@ public class EmailBanActionTest {
                 .doesNotContain("%0d")
                 .doesNotContain("%0D")
                 .doesNotContain("%0a")
-                .doesNotContain("%0A");
-        assertThat(result).isEqualTo("valid@example.comBcc: spy@evil.comX-Injected: yes");
+                .doesNotContain("%0A")
+                .isEqualTo("valid@example.comBcc: spy@evil.comX-Injected: yes");
     }
 
     // -------------------------------------------------------------------------

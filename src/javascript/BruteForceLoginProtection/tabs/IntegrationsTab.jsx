@@ -24,7 +24,7 @@ export const IntegrationsTab = () => {
     const [emailTestResult, setEmailTestResult] = useState(null);
     const [webhookTestResult, setWebhookTestResult] = useState(null);
 
-    const {loading} = useQuery(GET_GLOBAL_SETTINGS, {
+    const {data, loading} = useQuery(GET_GLOBAL_SETTINGS, {
         fetchPolicy: 'network-only',
         onCompleted: data => {
             const s = data?.bruteForceLoginProtectionGlobalSettings;
@@ -74,7 +74,17 @@ export const IntegrationsTab = () => {
     const handleSubmit = async e => {
         e.preventDefault();
         try {
+            // F-01: merge the current values of unrelated settings so saving the
+            // integration fields does not reset activated/trustProxyHeader/etc.
+            const current = data?.bruteForceLoginProtectionGlobalSettings || {};
             const variables = {
+                activated: current.activated,
+                whitelistIps: current.whitelistIps ?? '',
+                ignorePatterns: current.ignorePatterns || [],
+                trustProxyHeader: current.trustProxyHeader,
+                recidiveFactor: current.recidiveFactor,
+                maxBanTimeSeconds: current.maxBanTimeSeconds,
+                auditLogMaxEntries: current.auditLogMaxEntries,
                 emailEnabled: form.emailEnabled,
                 emailRecipient: form.emailRecipient,
                 webhookUrl: form.webhookUrl
@@ -133,24 +143,27 @@ export const IntegrationsTab = () => {
     const actions = actionsData?.bruteForceLoginProtectionBanActions || [];
 
     return (
-        <form className={styles.bflp_tabPanel} onSubmit={handleSubmit}>
-            <div className={styles.bflp_subSection}>
-                <h3>{t('integrations.emailTitle')}</h3>
-                <div className={styles.bflp_fieldGroup}>
-                    <span className={styles.bflp_label} id="bflp-int-email-label">{t('integrations.emailEnabled')}</span>
-                    <label className={styles.bflp_toggle}>
-                        <input
+        <div className={styles.bflp_tabPanel}>
+            <form onSubmit={handleSubmit}>
+                <div className={styles.bflp_subSection}>
+                    <h3>{t('integrations.emailTitle')}</h3>
+                    <div className={styles.bflp_fieldGroup}>
+                        <span className={styles.bflp_label} id="bflp-int-email-label">{t('integrations.emailEnabled')}</span>
+                        <p className={styles.bflp_hint} id="bflp-int-email-enabled-hint">{t('integrations.emailEnabledHint')}</p>
+                        <label className={styles.bflp_toggle}>
+                            <input
+                            aria-describedby="bflp-int-email-enabled-hint"
                             aria-labelledby="bflp-int-email-label"
                             checked={form.emailEnabled}
                             type="checkbox"
                             onChange={e => setForm(prev => ({...prev, emailEnabled: e.target.checked}))}
                         />
-                        <span className={styles.bflp_toggleSlider}/>
-                    </label>
-                </div>
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-int-email-recipient">{t('integrations.emailRecipient')}</label>
-                    <input
+                            <span className={styles.bflp_toggleSlider}/>
+                        </label>
+                    </div>
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-int-email-recipient">{t('integrations.emailRecipient')}</label>
+                        <input
                         aria-describedby="bflp-int-email-hint"
                         autoComplete="off"
                         className={`${styles.bflp_input} ${styles['bflp_input--wide']}`}
@@ -159,39 +172,39 @@ export const IntegrationsTab = () => {
                         value={form.emailRecipient}
                         onChange={e => setForm(prev => ({...prev, emailRecipient: e.target.value}))}
                     />
-                    {/* F-06: hint is now after the input and correctly wired */}
-                    <p className={styles.bflp_hint} id="bflp-int-email-hint">{t('integrations.emailRecipientHint')}</p>
-                </div>
-                <div className={styles.bflp_inlineActions}>
-                    <button
+                        {/* F-06: hint is now after the input and correctly wired */}
+                        <p className={styles.bflp_hint} id="bflp-int-email-hint">{t('integrations.emailRecipientHint')}</p>
+                    </div>
+                    <div className={styles.bflp_inlineActions}>
+                        <button
                         className={styles.bflp_tableActionBtn}
                         disabled={testingEmail}
                         type="button"
                         onClick={handleTestEmail}
-                    >
-                        {testingEmail ? t('integrations.testEmailSending') : t('integrations.testEmail')}
-                    </button>
-                    <p className={styles.bflp_hint}>{t('integrations.testEmailHint')}</p>
-                </div>
-                {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
-                <div
+                        >
+                            {testingEmail ? t('integrations.testEmailSending') : t('integrations.testEmail')}
+                        </button>
+                        <p className={styles.bflp_hint}>{t('integrations.testEmailHint')}</p>
+                    </div>
+                    {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
+                    <div
                     aria-atomic="true"
                     aria-live="polite"
                     role="status"
-                >
-                    {emailTestResult && (
+                    >
+                        {emailTestResult && (
                         <div className={`${styles.bflp_alert} ${emailTestResult.success ? styles['bflp_alert--success'] : styles['bflp_alert--error']}`}>
                             {emailTestResult.message}
                         </div>
                     )}
+                    </div>
                 </div>
-            </div>
 
-            <div className={styles.bflp_subSection}>
-                <h3>{t('integrations.webhookTitle')}</h3>
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-int-webhook-url">{t('integrations.webhookUrl')}</label>
-                    <input
+                <div className={styles.bflp_subSection}>
+                    <h3>{t('integrations.webhookTitle')}</h3>
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-int-webhook-url">{t('integrations.webhookUrl')}</label>
+                        <input
                         aria-describedby="bflp-int-webhook-url-hint"
                         autoComplete="off"
                         className={`${styles.bflp_input} ${styles['bflp_input--wide']}`}
@@ -200,11 +213,11 @@ export const IntegrationsTab = () => {
                         value={form.webhookUrl}
                         onChange={e => setForm(prev => ({...prev, webhookUrl: e.target.value}))}
                     />
-                    <p className={styles.bflp_hint} id="bflp-int-webhook-url-hint">{t('integrations.webhookUrlHint')}</p>
-                </div>
-                <div className={styles.bflp_fieldGroup}>
-                    <label className={styles.bflp_label} htmlFor="bflp-int-webhook-secret">{t('integrations.webhookSecret')}</label>
-                    <input
+                        <p className={styles.bflp_hint} id="bflp-int-webhook-url-hint">{t('integrations.webhookUrlHint')}</p>
+                    </div>
+                    <div className={styles.bflp_fieldGroup}>
+                        <label className={styles.bflp_label} htmlFor="bflp-int-webhook-secret">{t('integrations.webhookSecret')}</label>
+                        <input
                         aria-describedby="bflp-int-webhook-secret-hint"
                         autoComplete="new-password"
                         className={`${styles.bflp_input} ${styles['bflp_input--wide']}`}
@@ -213,14 +226,14 @@ export const IntegrationsTab = () => {
                         value={form.webhookSecret}
                         onChange={e => setForm(prev => ({...prev, webhookSecret: e.target.value}))}
                     />
-                    <p className={styles.bflp_hint} id="bflp-int-webhook-secret-hint">{t('integrations.webhookSecretHint')}</p>
-                    <p
+                        <p className={styles.bflp_hint} id="bflp-int-webhook-secret-hint">{t('integrations.webhookSecretHint')}</p>
+                        <p
                         aria-live="polite"
                         className={`${styles.bflp_secretStatus} ${secretConfigured ? '' : styles['bflp_secretStatus--missing']}`}
-                    >
-                        {secretConfigured ? t('integrations.webhookSecretConfigured') : t('integrations.webhookSecretNotConfigured')}
-                    </p>
-                    {secretConfigured && (
+                        >
+                            {secretConfigured ? t('integrations.webhookSecretConfigured') : t('integrations.webhookSecretNotConfigured')}
+                        </p>
+                        {secretConfigured && (
                         <div className={styles.bflp_inlineActions}>
                             <button
                                 className={styles.bflp_tableActionBtn}
@@ -232,43 +245,45 @@ export const IntegrationsTab = () => {
                             </button>
                         </div>
                     )}
-                </div>
-                <div className={styles.bflp_inlineActions}>
-                    <button
+                    </div>
+                    <div className={styles.bflp_inlineActions}>
+                        <button
                         className={styles.bflp_tableActionBtn}
                         disabled={testingWebhook}
                         type="button"
                         onClick={handleTestWebhook}
-                    >
-                        {testingWebhook ? t('integrations.testWebhookSending') : t('integrations.testWebhook')}
-                    </button>
-                    <p className={styles.bflp_hint}>{t('integrations.testWebhookHint')}</p>
-                </div>
-                {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
-                <div
+                        >
+                            {testingWebhook ? t('integrations.testWebhookSending') : t('integrations.testWebhook')}
+                        </button>
+                        <p className={styles.bflp_hint}>{t('integrations.testWebhookHint')}</p>
+                    </div>
+                    {/* F-22/F-25/F-26: pre-rendered live region — always present, content conditional */}
+                    <div
                     aria-atomic="true"
                     aria-live="polite"
                     role="status"
-                >
-                    {webhookTestResult && (
+                    >
+                        {webhookTestResult && (
                         <div className={`${styles.bflp_alert} ${webhookTestResult.success ? styles['bflp_alert--success'] : styles['bflp_alert--error']}`}>
                             {webhookTestResult.message}
                         </div>
                     )}
+                    </div>
                 </div>
-            </div>
 
-            <div className={styles.bflp_actions}>
-                {/* F-22/F-25/F-26: pre-rendered live regions */}
-                <StatusAlerts status={status}/>
-                <Button
+                <div className={styles.bflp_actions}>
+                    {/* F-22/F-25/F-26: pre-rendered live regions */}
+                    <StatusAlerts status={status}/>
+                    <Button
                     isDisabled={saving}
                     label={saving ? t('label.saving') : t('label.save')}
                     type="submit"
                     variant="primary"
                 />
-            </div>
+                </div>
+            </form>
 
+            {/* F-02: read-only informational table lives outside the form */}
             <div className={styles.bflp_subSection}>
                 <h3>{t('integrations.banActionsTitle')}</h3>
                 {actionsLoading && (
@@ -312,7 +327,7 @@ export const IntegrationsTab = () => {
                 onCancel={handleClearSecretCancel}
                 onConfirm={handleClearSecretConfirm}
             />
-        </form>
+        </div>
     );
 };
 
