@@ -72,26 +72,46 @@ public final class RegexSafetyCheck {
             char c = pattern.charAt(i);
             if (escaped) {
                 escaped = false;
-            } else if (c == '\\' && i + 1 < pattern.length()) {
-                escaped = true;
-            } else if (c == '(') {
-                depth++;
-                if (depth > MAX_GROUP_DEPTH) {
-                    // Reject rather than silently stop tracking: extreme nesting is itself a ReDoS
-                    // smell, and letting it through would bypass the per-group quantifier check.
-                    throw new IllegalArgumentException(
-                            "Pattern group nesting exceeds " + MAX_GROUP_DEPTH);
-                }
-                quantsAtDepth[depth] = 0;
-            } else if (c == ')' && depth > 0) {
-                if (quantsAtDepth[depth] > MAX_QUANTIFIERS_PER_GROUP) {
-                    throw new IllegalArgumentException("Pattern group has too many quantifiers ("
-                            + quantsAtDepth[depth] + " > " + MAX_QUANTIFIERS_PER_GROUP + ")");
-                }
-                depth--;
-            } else if ((c == '+' || c == '*' || c == '{') && depth > 0) {
-                quantsAtDepth[depth]++;
+                continue;
             }
+            if (c == '\\' && i + 1 < pattern.length()) {
+                escaped = true;
+                continue;
+            }
+            depth = processGroupChar(c, depth, quantsAtDepth);
         }
+    }
+
+    /** Updates and returns the new nesting depth after processing one (non-escaped) character. */
+    private static int processGroupChar(char c, int depth, int[] quantsAtDepth) {
+        if (c == '(') {
+            return openGroup(depth, quantsAtDepth);
+        }
+        if (c == ')' && depth > 0) {
+            return closeGroup(depth, quantsAtDepth);
+        }
+        if ((c == '+' || c == '*' || c == '{') && depth > 0) {
+            quantsAtDepth[depth]++;
+        }
+        return depth;
+    }
+
+    private static int openGroup(int depth, int[] quantsAtDepth) {
+        int next = depth + 1;
+        if (next > MAX_GROUP_DEPTH) {
+            // Reject rather than silently stop tracking: extreme nesting is itself a ReDoS
+            // smell, and letting it through would bypass the per-group quantifier check.
+            throw new IllegalArgumentException("Pattern group nesting exceeds " + MAX_GROUP_DEPTH);
+        }
+        quantsAtDepth[next] = 0;
+        return next;
+    }
+
+    private static int closeGroup(int depth, int[] quantsAtDepth) {
+        if (quantsAtDepth[depth] > MAX_QUANTIFIERS_PER_GROUP) {
+            throw new IllegalArgumentException("Pattern group has too many quantifiers ("
+                    + quantsAtDepth[depth] + " > " + MAX_QUANTIFIERS_PER_GROUP + ")");
+        }
+        return depth - 1;
     }
 }

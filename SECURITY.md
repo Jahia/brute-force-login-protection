@@ -23,3 +23,41 @@ The Dependabot version-update PRs for `com.hazelcast:hazelcast-all` are
 suppressed in `.github/dependabot.yml`. The corresponding security alert on the
 GitHub Security tab is left in place as a tracking flag and should be dismissed
 manually with a "tolerable risk — fixed in the host platform" rationale.
+
+## Audit Log — PII Retention and Access Controls
+
+The module stores an audit trail of all bans, unbans, and configuration changes in the JCR audit log (`/settings/bruteforceloginprotection/auditLog`). This trail includes client-supplied usernames, which may include:
+
+- **Legitimate usernames** when login attempts are made against known accounts
+- **Mistyped passwords** if users accidentally enter a password in the username field
+- **Personal identifiable information** if usernames are email addresses or other PII
+
+### Retention Limits
+
+The audit log is **bounded by the `audit_log_max_entries` setting** (default: 1000 entries). When the limit is reached, the oldest entries are automatically purged. Operators can also manually clear the log via the **Audit** tab in the admin UI.
+
+### Access Control Recommendations
+
+**Lock down read access** to the audit log node (`/settings/bruteforceloginprotection/auditLog`) at the JCR level:
+
+- Only administrators should have read/list permissions on audit data
+- Consider implementing a separate "auditor" role with read-only access if your organization requires non-admin audit visibility
+- Restrict write access (ban/unban/config changes) to a minimal set of operators via the coarse-grained `admin` permission required by all GraphQL mutations
+
+### GDPR Considerations
+
+If your Jahia instance is subject to GDPR (or similar data protection regulations):
+
+- The audit log qualifies as **personal data** (usernames, IP addresses, timestamps)
+- **Retention policy:** Configure `audit_log_max_entries` to align with your data retention requirements (e.g., set it to a value that represents ~30 days of typical login-attempt volume if you retain for 30 days)
+- **Data subject access requests:** Establish a procedure to export audit entries on request (export via the UI or direct JCR query)
+- **Deletion:** The manual **Clear Audit Log** button in the UI is the primary deletion mechanism; consider disabling it via permission controls if you need an immutable audit trail
+- **Mistyped passwords:** Instruct users never to enter passwords in the username field; this will reduce accidental PII capture, but recognize that mistakes will still occur
+
+### Webhook and Email Notifications
+
+Webhook payloads and email notifications also contain IP addresses and may reference usernames (via the ban reason or jail name). Ensure webhook receivers are:
+
+- **Encrypted in transit** (HTTPS/TLS; the module rejects plaintext `http://` for remote receivers by default)
+- **Restricted to trusted endpoints** (use allowlists to prevent SSRF)
+- **Configured to handle PII securely** (do not log full payloads to stdout; encrypt at rest if persisted)

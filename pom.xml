@@ -147,6 +147,56 @@
         <version>3.5.5</version>
       </plugin>
       <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.12</version>
+        <executions>
+          <!-- Instrument the JVM for coverage data collection -->
+          <execution>
+            <id>jacoco-prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <!-- Produce target/site/jacoco/jacoco.csv after tests run -->
+          <execution>
+            <id>jacoco-report</id>
+            <phase>test</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+          <!--
+            Gate: LINE coverage minimum 0.30 (current measured floor ~32.7%).
+            Set just below the measured value to act as a regression ratchet, not to break
+            the build. NOTE: 0.80 is the long-term target per §6 of the review; the bulk of
+            the remaining lines are JCR/OSGi/Hazelcast paths that require a live Jahia
+            runtime (covered by the Cypress E2E suite, not unit tests). Raise this gate
+            incrementally as more unit-testable paths are added.
+          -->
+          <execution>
+            <id>jacoco-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.30</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
         <extensions>true</extensions>

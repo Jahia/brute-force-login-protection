@@ -37,13 +37,13 @@ import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -59,7 +59,9 @@ public class HazelcastInstanceManager implements Runnable {
     private static final String CLUSTER_TRUSTSTORE_PROPERTY = "bflp.cluster.truststore";
     private static final String CLUSTER_TRUSTSTORE_PASSWORD_PROPERTY = "bflp.cluster.truststorePassword";
 
-    private final List<DiscoveryService> discoveryServices = new ArrayList<>();
+    // Mutated by dynamic OSGi @Reference bind/unbind from arbitrary threads while the discovery
+    // scheduler iterates it — CopyOnWriteArrayList avoids ConcurrentModificationException.
+    private final List<DiscoveryService> discoveryServices = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final BundleListener flushClassLoaderCacheBundleListener = event -> ClassLoaderUtil.flushCache();
 

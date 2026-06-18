@@ -4,6 +4,7 @@ import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
 import styles from '../BruteForceLoginProtection.scss';
 import {DELETE_JAIL, GET_JAILS, SAVE_JAIL} from '../BruteForceLoginProtection.gql';
+import {ConfirmDialog} from '../ConfirmDialog';
 import {StatusAlerts} from './StatusAlerts';
 import {useTransientStatus} from './useTransientStatus';
 
@@ -20,6 +21,8 @@ export const JailsTab = () => {
     const {t} = useTranslation('brute-force-login-protection');
     const [status, setStatus] = useTransientStatus();
     const [editingForm, setEditingForm] = useState(null);
+    const [nameError, setNameError] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState(null); // Jail name to delete
 
     const {data, loading} = useQuery(GET_JAILS, {fetchPolicy: 'network-only'});
     const [saveJail, {loading: saving}] = useMutation(SAVE_JAIL, {
@@ -31,7 +34,10 @@ export const JailsTab = () => {
 
     const handleSave = async e => {
         e.preventDefault();
+        setNameError('');
+        // F-05: surface jail-name validation error
         if (!editingForm.name.trim()) {
+            setNameError(t('jails.nameRequired'));
             return;
         }
 
@@ -57,12 +63,14 @@ export const JailsTab = () => {
         }
     };
 
-    const handleDelete = async name => {
-        // eslint-disable-next-line no-alert
-        if (!window.confirm(t('jails.confirmDelete', {name}))) {
-            return;
-        }
+    // F-19/F-30: replaced window.confirm with ConfirmDialog
+    const handleDeleteRequest = name => {
+        setConfirmDelete(name);
+    };
 
+    const handleDeleteConfirm = async () => {
+        const name = confirmDelete;
+        setConfirmDelete(null);
         try {
             const result = await deleteJail({variables: {name}});
             setStatus(result.data?.bruteForceLoginProtectionDeleteJail ? 'success' : 'error');
@@ -72,9 +80,13 @@ export const JailsTab = () => {
         }
     };
 
+    const handleDeleteCancel = () => {
+        setConfirmDelete(null);
+    };
+
     if (loading) {
         return (
-            <div className={styles.bflp_loading} aria-busy="true" aria-live="polite">
+            <div aria-busy="true" aria-live="polite" className={styles.bflp_loading}>
                 <Loader size="big"/>
                 <span className={styles.bflp_sr_only}>{t('label.loading')}</span>
             </div>
@@ -97,84 +109,116 @@ export const JailsTab = () => {
             </div>
             <Typography className={styles.bflp_description}>{t('jails.description')}</Typography>
 
+            {/* F-22/F-25/F-26: pre-rendered live regions */}
             <StatusAlerts status={status}/>
 
             {editingForm && (
-                <form className={styles.bflp_addJailForm} onSubmit={handleSave} aria-label={t('jails.formTitle')}>
-                    <div className={styles.bflp_fieldRow}>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-jail-name">{t('jails.name')}</label>
-                            <input
-                                id="bflp-jail-name"
-                                type="text"
-                                className={styles.bflp_input}
-                                value={editingForm.name}
-                                disabled={!editingForm.isNew}
-                                aria-describedby="bflp-jail-name-hint"
-                                onChange={e => setEditingForm(prev => ({...prev, name: e.target.value}))}
-                            />
-                            <p id="bflp-jail-name-hint" className={styles.bflp_hint}>{t('jails.nameHint')}</p>
-                        </div>
-                        <div className={styles.bflp_fieldGroup}>
-                            <span id="bflp-jail-enabled-label" className={styles.bflp_label}>{t('jails.enabled')}</span>
-                            <label className={styles.bflp_toggle}>
+                /* F-09: fieldset/legend grouping for the jail form */
+                <form aria-label={t('jails.formTitle')} className={styles.bflp_addJailForm} onSubmit={handleSave}>
+                    <fieldset className={styles.bflp_fieldset}>
+                        <legend className={styles.bflp_fieldsetLegend}>{t('jails.identityLegend')}</legend>
+                        <div className={styles.bflp_fieldRow}>
+                            <div className={styles.bflp_fieldGroup}>
+                                {/* F-04/F-05: required + aria-required + aria-invalid + aria-describedby */}
+                                <label className={styles.bflp_label} htmlFor="bflp-jail-name">
+                                    {t('jails.name')}
+                                    <span aria-hidden="true" className={styles.bflp_required}>*</span>
+                                </label>
                                 <input
-                                    type="checkbox"
-                                    aria-labelledby="bflp-jail-enabled-label"
-                                    checked={editingForm.enabled}
-                                    onChange={e => setEditingForm(prev => ({...prev, enabled: e.target.checked}))}
+                                    required
+                                    aria-describedby={nameError ? 'bflp-jail-name-hint bflp-jail-name-error' : 'bflp-jail-name-hint'}
+                                    aria-invalid={nameError ? 'true' : undefined}
+                                    aria-required="true"
+                                    className={styles.bflp_input}
+                                    disabled={!editingForm.isNew}
+                                    id="bflp-jail-name"
+                                    type="text"
+                                    value={editingForm.name}
+                                    onChange={e => {
+                                        setNameError('');
+                                        setEditingForm(prev => ({...prev, name: e.target.value}));
+                                    }}
                                 />
-                                <span className={styles.bflp_toggleSlider}/>
-                            </label>
+                                <p className={styles.bflp_hint} id="bflp-jail-name-hint">{t('jails.nameHint')}</p>
+                                {/* F-05: always-present error node */}
+                                <p
+                                    aria-atomic="true"
+                                    aria-live="polite"
+                                    className={styles.bflp_fieldError}
+                                    id="bflp-jail-name-error"
+                                >
+                                    {nameError || ''}
+                                </p>
+                            </div>
+                            <div className={styles.bflp_fieldGroup}>
+                                <span className={styles.bflp_label} id="bflp-jail-enabled-label">{t('jails.enabled')}</span>
+                                <label className={styles.bflp_toggle}>
+                                    <input
+                                        aria-labelledby="bflp-jail-enabled-label"
+                                        checked={editingForm.enabled}
+                                        type="checkbox"
+                                        onChange={e => setEditingForm(prev => ({...prev, enabled: e.target.checked}))}
+                                    />
+                                    <span className={styles.bflp_toggleSlider}/>
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                    <div className={styles.bflp_fieldRow}>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-jail-maxretry">{t('jails.maxRetry')}</label>
-                            <input
-                                id="bflp-jail-maxretry"
-                                type="number"
-                                min="1"
-                                className={styles.bflp_input}
-                                value={editingForm.maxRetry}
-                                onChange={e => setEditingForm(prev => ({...prev, maxRetry: e.target.value}))}
-                            />
+                    </fieldset>
+
+                    <fieldset className={styles.bflp_fieldset}>
+                        <legend className={styles.bflp_fieldsetLegend}>{t('jails.thresholdsLegend')}</legend>
+                        <div className={styles.bflp_fieldRow}>
+                            <div className={styles.bflp_fieldGroup}>
+                                <label className={styles.bflp_label} htmlFor="bflp-jail-maxretry">{t('jails.maxRetry')}</label>
+                                <input
+                                    className={styles.bflp_input}
+                                    id="bflp-jail-maxretry"
+                                    min="1"
+                                    type="number"
+                                    value={editingForm.maxRetry}
+                                    onChange={e => setEditingForm(prev => ({...prev, maxRetry: e.target.value}))}
+                                />
+                            </div>
+                            <div className={styles.bflp_fieldGroup}>
+                                <label className={styles.bflp_label} htmlFor="bflp-jail-findtime">{t('jails.findTimeSeconds')}</label>
+                                <input
+                                    className={styles.bflp_input}
+                                    id="bflp-jail-findtime"
+                                    min="1"
+                                    type="number"
+                                    value={editingForm.findTimeSeconds}
+                                    onChange={e => setEditingForm(prev => ({...prev, findTimeSeconds: e.target.value}))}
+                                />
+                            </div>
+                            <div className={styles.bflp_fieldGroup}>
+                                <label className={styles.bflp_label} htmlFor="bflp-jail-bantime">{t('jails.banTimeSeconds')}</label>
+                                <input
+                                    className={styles.bflp_input}
+                                    id="bflp-jail-bantime"
+                                    min="1"
+                                    type="number"
+                                    value={editingForm.banTimeSeconds}
+                                    onChange={e => setEditingForm(prev => ({...prev, banTimeSeconds: e.target.value}))}
+                                />
+                            </div>
                         </div>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-jail-findtime">{t('jails.findTimeSeconds')}</label>
-                            <input
-                                id="bflp-jail-findtime"
-                                type="number"
-                                min="1"
-                                className={styles.bflp_input}
-                                value={editingForm.findTimeSeconds}
-                                onChange={e => setEditingForm(prev => ({...prev, findTimeSeconds: e.target.value}))}
-                            />
-                        </div>
-                        <div className={styles.bflp_fieldGroup}>
-                            <label className={styles.bflp_label} htmlFor="bflp-jail-bantime">{t('jails.banTimeSeconds')}</label>
-                            <input
-                                id="bflp-jail-bantime"
-                                type="number"
-                                min="1"
-                                className={styles.bflp_input}
-                                value={editingForm.banTimeSeconds}
-                                onChange={e => setEditingForm(prev => ({...prev, banTimeSeconds: e.target.value}))}
-                            />
-                        </div>
-                    </div>
+                    </fieldset>
+
                     <div className={styles.bflp_inlineActions}>
                         <Button
-                            type="submit"
-                            label={saving ? t('label.saving') : t('label.save')}
-                            variant="primary"
                             isDisabled={saving || !editingForm.name.trim()}
+                            label={saving ? t('label.saving') : t('label.save')}
+                            type="submit"
+                            variant="primary"
                         />
                         <Button
+                            isDisabled={saving}
                             label={t('label.cancel')}
                             variant="default"
-                            isDisabled={saving}
-                            onClick={() => setEditingForm(null)}
+                            onClick={() => {
+                                setNameError('');
+                                setEditingForm(null);
+                            }}
                         />
                     </div>
                 </form>
@@ -184,9 +228,12 @@ export const JailsTab = () => {
                 <Typography className={styles.bflp_emptyState}>{t('jails.noJails')}</Typography>
             ) : (
                 <table className={styles.bflp_table}>
+                    {/* F-11: table caption */}
+                    <caption className={styles.bflp_tableCaption}>{t('jails.tableCaption')}</caption>
                     <thead>
                         <tr>
-                            <th scope="col">{t('jails.colName')}</th>
+                            {/* F-12: aria-sort on the pre-sorted Name column */}
+                            <th aria-sort="ascending" scope="col">{t('jails.colName')}</th>
                             <th scope="col">{t('jails.colEnabled')}</th>
                             <th scope="col">{t('jails.colMaxRetry')}</th>
                             <th scope="col">{t('jails.colFindTime')}</th>
@@ -199,33 +246,35 @@ export const JailsTab = () => {
                             <tr key={j.name}>
                                 <td className={styles.bflp_ipCell}>{j.name}</td>
                                 <td>
+                                    {/* F-13: i18n for on/off */}
                                     <span className={`${styles.bflp_badge} ${j.enabled ? styles['bflp_badge--enabled'] : styles['bflp_badge--disabled']}`}>
-                                        {j.enabled ? 'on' : 'off'}
+                                        {j.enabled ? t('label.on') : t('label.off')}
                                     </span>
                                 </td>
                                 <td>{j.maxRetry}</td>
                                 <td>{j.findTimeSeconds}</td>
                                 <td>{j.banTimeSeconds}</td>
+                                {/* F-21/F-28: table action buttons >=44x44 via bflp_tableActionBtn */}
                                 <td>
                                     <button
+                                        className={styles.bflp_tableActionBtn}
                                         type="button"
-                                        className={styles.bflp_rowEditBtn}
                                         onClick={() => setEditingForm({
-                                            name: j.name,
-                                            enabled: j.enabled,
-                                            maxRetry: j.maxRetry,
-                                            findTimeSeconds: j.findTimeSeconds,
                                             banTimeSeconds: j.banTimeSeconds,
-                                            isNew: false
+                                            enabled: j.enabled,
+                                            findTimeSeconds: j.findTimeSeconds,
+                                            isNew: false,
+                                            maxRetry: j.maxRetry,
+                                            name: j.name
                                         })}
                                     >
                                         {t('label.edit')}
                                     </button>
                                     <button
-                                        type="button"
-                                        className={styles.bflp_unbanBtn}
+                                        className={styles.bflp_tableActionBtn}
                                         disabled={deleting}
-                                        onClick={() => handleDelete(j.name)}
+                                        type="button"
+                                        onClick={() => handleDeleteRequest(j.name)}
                                     >
                                         {t('label.delete')}
                                     </button>
@@ -235,6 +284,14 @@ export const JailsTab = () => {
                     </tbody>
                 </table>
             )}
+
+            {/* F-19/F-30: accessible confirm dialog for delete */}
+            <ConfirmDialog
+                isOpen={Boolean(confirmDelete)}
+                message={t('jails.confirmDelete', {name: confirmDelete})}
+                onCancel={handleDeleteCancel}
+                onConfirm={handleDeleteConfirm}
+            />
         </div>
     );
 };

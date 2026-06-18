@@ -4,6 +4,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import org.apache.commons.lang.StringUtils;
 import org.jahia.modules.bruteforceloginprotection.BruteForceLoginProtectionConstants;
+import org.jahia.modules.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.modules.bruteforceloginprotection.core.BanContext;
 import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.core.IntegrationTestResult;
@@ -61,11 +62,11 @@ public class EmailBanAction implements BanAction {
         try {
             String recipient = stripHeaderInjection(StringUtils.defaultIfBlank(settings.getEmailRecipient(), mailService.defaultRecipient()));
             String sender = stripHeaderInjection(mailService.defaultSender());
-            String subject = stripHeaderInjection(String.format("[BFLP] Login blocked for IP %s", sanitize(context.getIp())));
-            String body = "The IP " + sanitize(context.getIp()) + " was banned by jail '" + sanitize(context.getJailName())
+            String subject = stripHeaderInjection(String.format("[BFLP] Login blocked for IP %s", AuditLogger.sanitize(context.getIp())));
+            String body = "The IP " + AuditLogger.sanitize(context.getIp()) + " was banned by jail '" + AuditLogger.sanitize(context.getJailName())
                     + "' (banCount=" + context.getBanCount()
                     + ", until=" + context.getBannedUntil() + ").\n"
-                    + "Reason: " + sanitize(context.getReason());
+                    + "Reason: " + AuditLogger.sanitize(context.getReason());
             mailService.sendMessage(sender, recipient, null, null, subject, body);
         } catch (Exception e) {
             LOGGER.warn("BFLP: error sending ban notification email: {}", e.getMessage());
@@ -122,10 +123,6 @@ public class EmailBanAction implements BanAction {
         Long existing = markers.putIfAbsent(ip, System.currentTimeMillis(),
                 BruteForceLoginProtectionConstants.NOTIFICATION_THROTTLE_SECONDS, TimeUnit.SECONDS);
         return existing == null;
-    }
-
-    private static String sanitize(String s) {
-        return s == null ? null : s.replaceAll("[\r\n]", "");
     }
 
     /**

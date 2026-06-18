@@ -12,10 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -57,26 +55,25 @@ public class UnbanScheduler {
 
     public void sweep() {
         // scheduleWithFixedDelay permanently cancels the task if its run throws, so this method must
-        // never propagate anything — catch Throwable (not just Exception) around the ENTIRE body,
-        // including the audit-log trim, so a transient failure only skips one interval.
+        // never propagate a recoverable failure — catch Exception around the ENTIRE body, including
+        // the audit-log trim, so a transient failure only skips one interval. Errors (OOM etc.) are
+        // intentionally left to propagate.
         try {
             HazelcastInstance hz = hazelcastManager.getHazelcastInstance();
             if (hz != null && hazelcastManager.isRunning()) {
                 IMap<String, BannedIp> bans = hz.getMap(MAP_BANS);
                 long now = System.currentTimeMillis();
-                Set<String> toRemove = new HashSet<>();
                 List<BannedIp> expired = new ArrayList<>();
                 // Iterate a snapshot so a concurrent unbanIp()/eviction cannot make us skip an entry
-                // mid-iteration (and so each expiry dispatches its unban actions exactly once).
+                // mid-iteration. Only dispatch the unban actions for an entry that THIS sweep
+                // actually removed (bans.remove(key) != null): a concurrent manual unbanIp() or
+                // Hazelcast TTL eviction may have already removed it and dispatched onUnban, so
+                // guarding on the remove result prevents a duplicate dispatch.
                 for (Map.Entry<String, BannedIp> e : new ArrayList<>(bans.entrySet())) {
                     BannedIp b = e.getValue();
-                    if (b != null && b.isExpired(now)) {
-                        toRemove.add(e.getKey());
+                    if (b != null && b.isExpired(now) && bans.remove(e.getKey()) != null) {
                         expired.add(b);
                     }
-                }
-                for (String key : toRemove) {
-                    bans.remove(key);
                 }
                 for (BannedIp b : expired) {
                     tracker.removeBanFromJcr(b.getIp());
@@ -96,7 +93,7 @@ public class UnbanScheduler {
             // Trim the audit log periodically instead of on every write (avoids an O(n) JCR scan
             // on the hot login-failure recording path).
             auditLogger.trimAuditLog();
-        } catch (Throwable t) {
+        } catch (Exception t) {
             LOGGER.error("BFLP: unban sweep failed; will retry on next interval", t);
         }
     }

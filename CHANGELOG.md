@@ -1,0 +1,74 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.2-SNAPSHOT] — Unreleased
+
+### Fixed
+- (placeholder for patch fixes)
+
+### Changed
+- (placeholder for non-breaking changes)
+
+## [3.0.0] — 2025-12-31
+
+### Breaking Changes
+
+**Do not upgrade without re-entering configuration.**
+
+- **JCR schema rewrite:** The old `jnt:serverSettingsBruteForceLoginProtection` node type and legacy properties (`nb_failed_login_max`, `time_to_idle`) are no longer read. Settings must be re-entered via the admin UI or the new GraphQL mutations.
+- **GraphQL schema rewrite:** The legacy `bruteForceLoginProtectionSettings` endpoint is replaced by `bruteForceLoginProtectionGlobalSettings` + `bruteForceLoginProtectionJails`. Clients must migrate queries and mutations.
+- **OSGi ConfigurationAdmin migration:** Starting from v3.0.0-SNAPSHOT, global settings and jail definitions are stored in `karaf/etc/` (ConfigurationAdmin) rather than JCR. Existing v3-SNAPSHOT in-flight instances must re-enter their settings; JCR values are no longer read at startup.
+
+### Added
+
+- **Per-jail configuration:** Multiple independent jails with separate thresholds (`maxRetry`, `findTimeSeconds`) and ban durations (`banTimeSeconds`).
+- **Persistent bans with recidive escalation:** Bans survive cluster restarts; repeat offenders face exponentially longer bans, capped by `maxBanTimeSeconds`. Escalation is driven by `recidiveFactor`.
+- **Sliding-window detection:** Count failed logins within a configurable time window (`findTime`), not just consecutive failures.
+- **Pluggable SPIs:** New extension points allow custom modules to:
+  - Register `AuthFailureDetector` implementations for new authentication schemes.
+  - Register `BanAction` implementations for custom ban reactions (email, webhook, custom integrations).
+  - Publish login failures via `FailureSource` SPIs.
+- **Audit log:** Every ban, unban, and configuration change is recorded and searchable from the admin UI; bounded by `audit_log_max_entries`.
+- **Cluster-aware distributed state:** Bans are shared across Jahia nodes via an embedded Hazelcast instance (separate from Jahia's own cluster). Per-IP state is protected by optimistic locking (CAS) and TTL auto-expiry.
+- **Broad auth coverage:** Out-of-the-box detection for form login (all SSO valves via `VALVE_RESULT`), HTTP Basic, Personal API tokens (`Authorization: APIToken`), and legacy `jahiatoken` header.
+- **Built-in ban actions:**
+  - **In-process block:** Bans are enforced by the auth valve at position 0, short-circuiting all requests from banned IPs.
+  - **Email notification:** SMTP throttled per-IP to prevent mail-flood DoS.
+  - **Webhook POST:** HMAC-SHA256 signed (`X-BFLP-Signature` header) with SSRF guards (https-only, loopback/private/AWS-metadata rejected).
+- **Admin UI:** React tabbed interface (General, Jails, Bans, Audit, Integrations) with GraphQL backing.
+- **Cluster security hardening:** Optional per-install group password (auto-generated or custom) and mutual-TLS for Hazelcast cluster traffic.
+- **Reverse proxy support:** Configurable trusted proxy CIDR allowlist for `X-Forwarded-For` header validation (right-to-left chain walk).
+- **Resilient ignore patterns:** ReDoS-hardened regex engine with bounded compilation time and fail-closed timeout semantics.
+
+### Fixed
+
+- (initial release of v3; no prior v3 bugs noted)
+
+### Security
+
+- All user inputs are validated and sanitized (CIDR, LDAP filter escaping, JCR filter escaping).
+- Webhook secret is encrypted at rest in JCR.
+- Webhook HTTP receiver addresses are validated to reject SSRF targets (loopback, private ranges, AWS metadata).
+- HMAC-SHA256 webhook signatures are computed over the raw body; receivers must use constant-time comparison.
+- X-Forwarded-For parsing is safe against IP-literal spoofing and truncation attacks.
+- Manual ban duration is clamped by `maxBanTimeSeconds` to prevent unbounded escalation.
+- Java deserialization uses an explicit allowlist for Hazelcast serialization.
+- Cluster secret is created with restrictive POSIX permissions (`rw-------`).
+
+### Known Limitations
+
+- **IP-keyed counting only:** Per-account brute-force controls require pairing with a Jahia account-lockout mechanism; no optional username-keyed jail exists yet.
+- **Fail-open enforcement:** When Hazelcast is down, all bans are disabled (the JCR mirror is not consulted on the hot path); this is a deliberate anti-DoS choice to avoid hot-path JCR overhead.
+- **Dual source of truth:** Bans live in Hazelcast and are mirrored to JCR; silent divergence is possible if a cluster restarts with stale JCR nodes or if a Hazelcast write succeeds while the JCR mirror fails.
+- **Separate embedded cluster:** The module operates its own Hazelcast instance (bound at base port + 2) rather than reusing Jahia's Cellar-managed cluster; this isolates blast radius at the cost of operational complexity (port collision hazard).
+
+### Dependencies
+
+- **Hazelcast 3.12.13:** Embedded cluster for distributed state; EOL upstream, planned migration to 4.x/5.x.
+- **Jahia 8.2+:** Requires Jahia 8.2 with cluster mode enabled (`cluster.activated=true`).
+- **Java 17:** Build and runtime.
+- **GraphQL DXM Provider:** For admin UI query/mutation endpoints.

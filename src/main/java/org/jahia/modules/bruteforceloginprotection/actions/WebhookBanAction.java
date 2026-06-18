@@ -6,7 +6,9 @@ import org.jahia.modules.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.modules.bruteforceloginprotection.core.IntegrationTestResult;
 import org.jahia.modules.bruteforceloginprotection.core.SettingsService;
 import org.jahia.modules.bruteforceloginprotection.spi.BanAction;
+import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,15 +37,40 @@ public class WebhookBanAction implements BanAction {
     private static final Logger LOGGER = LoggerFactory.getLogger(WebhookBanAction.class);
     private static final long OVERALL_DEADLINE_SEC = 10L;
     private static final int EXECUTOR_POOL_SIZE = 2;
-    private static final AtomicInteger WEBHOOK_THREAD_COUNTER = new AtomicInteger();
-    private static final ExecutorService WEBHOOK_EXECUTOR = Executors.newFixedThreadPool(EXECUTOR_POOL_SIZE, r -> {
-        Thread t = new Thread(r, "bflp-webhook-" + WEBHOOK_THREAD_COUNTER.incrementAndGet());
-        t.setDaemon(true);
-        return t;
-    });
+    private static final long SHUTDOWN_AWAIT_SEC = 5L;
+    private final AtomicInteger webhookThreadCounter = new AtomicInteger();
+
+    // Created in @Activate and shut down in @Deactivate so a bundle refresh never leaves
+    // submissions hitting a terminated pool.
+    private ExecutorService webhookExecutor;
 
     @Reference
     private SettingsService settingsService;
+
+    @Activate
+    protected void activate() {
+        webhookExecutor = Executors.newFixedThreadPool(EXECUTOR_POOL_SIZE, r -> {
+            Thread t = new Thread(r, "bflp-webhook-" + webhookThreadCounter.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    @Deactivate
+    protected void deactivate() {
+        if (webhookExecutor == null) {
+            return;
+        }
+        webhookExecutor.shutdown();
+        try {
+            if (!webhookExecutor.awaitTermination(SHUTDOWN_AWAIT_SEC, TimeUnit.SECONDS)) {
+                webhookExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            webhookExecutor.shutdownNow();
+        }
+    }
 
     @Override
     public String getName() {
@@ -81,7 +108,7 @@ public class WebhookBanAction implements BanAction {
         String body = buildJson(context, event);
         String secret = settings.getWebhookSecret();
         final HttpURLConnection[] connHolder = new HttpURLConnection[1];
-        Future<Void> future = WEBHOOK_EXECUTOR.submit(() -> {
+        Future<Void> future = webhookExecutor.submit(() -> {
             deliver(url, pinned, body, secret, connHolder);
             return null;
         });
