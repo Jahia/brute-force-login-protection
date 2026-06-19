@@ -3118,7 +3118,7 @@ __metadata:
     cypress-file-upload: ^5.0.8
     cypress-iframe: ^1.0.1
     cypress-mailpit: ^1.4.0
-    cypress-multi-reporters: ^1.6.3
+    cypress-multi-reporters: ^2.0.5
     cypress-terminal-report: ^5.3.7
     cypress-wait-until: ^3.0.1
     dotenv: ^10.0.0
@@ -3675,15 +3675,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cypress-multi-reporters@npm:^1.6.3":
-  version: 1.6.4
-  resolution: "cypress-multi-reporters@npm:1.6.4"
+"cypress-multi-reporters@npm:^2.0.5":
+  version: 2.0.5
+  resolution: "cypress-multi-reporters@npm:2.0.5"
   dependencies:
-    debug: "npm:^4.3.4"
-    lodash: "npm:^4.17.21"
+    debug: ^4.4.0
+    lodash: ^4.17.21
+    semver: ^7.6.3
   peerDependencies:
     mocha: ">=3.1.2"
-  checksum: 194554ac7d5720cbd3a9175f94393bbc37c60ccd258027a57b87353d7f33c86210b6280922dfa80ba9686ed195091b45191827e40487f26ea8b0a5d1b0f3b575
+  checksum: 8/dcd97a73f5b579d6dcf5667c47044a8b3acc52df5be8d318f979eb48139796795cc6908a208bdf43aa96d0ea88942447d5e46da3dc5543321f7fa742282644be
   languageName: node
   linkType: hard
 
@@ -3844,7 +3845,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:4, debug@npm:4.4.3, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.4, debug@npm:^4.3.5, debug@npm:^4.4.3":
+"debug@npm:4, debug@npm:4.4.3, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.4, debug@npm:^4.3.5, debug@npm:^4.4.0, debug@npm:^4.4.3":
   version: 4.4.3
   resolution: "debug@npm:4.4.3"
   dependencies:
