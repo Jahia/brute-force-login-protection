@@ -58,7 +58,7 @@ export const AuditTab = () => {
         setConfirmOpen(false);
         try {
             const r = await clearLog();
-            setStatus(r.data?.bruteForceLoginProtectionClearAuditLog ? 'success' : 'error');
+            setStatus(r.data?.bruteForceLoginProtection?.clearAuditLog ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to clear audit log:', err);
             setStatus('error');
@@ -69,7 +69,7 @@ export const AuditTab = () => {
         setConfirmOpen(false);
     };
 
-    const entries = data?.bruteForceLoginProtectionAuditLog || [];
+    const entries = data?.bruteForceLoginProtection?.auditLog || [];
 
     return (
         <div className={styles.bflp_tabPanel}>

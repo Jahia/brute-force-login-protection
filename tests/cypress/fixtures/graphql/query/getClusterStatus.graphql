@@ -1,6 +1,8 @@
 query getClusterStatus {
-    bruteForceLoginProtectionClusterStatus {
-        hazelcastRunning
-        nodeCount
+    bruteForceLoginProtection {
+        clusterStatus {
+            hazelcastRunning
+            nodeCount
+        }
     }
 }

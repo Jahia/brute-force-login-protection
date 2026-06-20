@@ -1,11 +1,13 @@
 query getAuditLog($limit: Int) {
-    bruteForceLoginProtectionAuditLog(limit: $limit) {
-        id
-        timestamp
-        event
-        ip
-        jail
-        source
-        details
+    bruteForceLoginProtection {
+        auditLog(limit: $limit) {
+            id
+            timestamp
+            event
+            ip
+            jail
+            source
+            details
+        }
     }
 }

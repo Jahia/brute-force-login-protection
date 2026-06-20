@@ -4,10 +4,12 @@ mutation banIp(
     $durationSeconds: Int
     $reason: String
 ) {
-    bruteForceLoginProtectionBanIp(
-        ip: $ip
-        jail: $jail
-        durationSeconds: $durationSeconds
-        reason: $reason
-    )
+    bruteForceLoginProtection {
+        banIp(
+            ip: $ip
+            jail: $jail
+            durationSeconds: $durationSeconds
+            reason: $reason
+        )
+    }
 }

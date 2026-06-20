@@ -30,7 +30,7 @@ export const GeneralTab = () => {
     const {loading} = useQuery(GET_GLOBAL_SETTINGS, {
         fetchPolicy: 'network-only',
         onCompleted: data => {
-            const s = data?.bruteForceLoginProtectionGlobalSettings;
+            const s = data?.bruteForceLoginProtection?.globalSettings;
             if (s) {
                 setForm({
                     activated: s.activated,
@@ -113,7 +113,7 @@ export const GeneralTab = () => {
                     auditLogMaxEntries: Number.parseInt(form.auditLogMaxEntries, 10)
                 }
             });
-            setStatus(result.data?.bruteForceLoginProtectionSaveGlobalSettings ? 'success' : 'error');
+            setStatus(result.data?.bruteForceLoginProtection?.saveGlobalSettings ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to save global settings:', err);
             setStatus('error');

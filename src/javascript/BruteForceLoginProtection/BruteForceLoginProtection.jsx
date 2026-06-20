@@ -34,7 +34,7 @@ const ClusterStatusBar = () => {
         text = t('cluster.unknown');
         cls = styles['bflp_clusterStatus--unknown'];
     } else {
-        const status = data?.bruteForceLoginProtectionClusterStatus;
+        const status = data?.bruteForceLoginProtection?.clusterStatus;
         const healthy = status && status.hazelcastRunning && status.nodeCount > 0;
         text = healthy ?
             t('cluster.healthy', {count: status.nodeCount}) :
@@ -108,7 +108,7 @@ export const BruteForceLoginProtectionAdmin = () => {
         setConfirmOpen(false);
         try {
             const r = await flushAll();
-            setFlushStatus(r.data?.bruteForceLoginProtectionFlush ? 'success' : 'error');
+            setFlushStatus(r.data?.bruteForceLoginProtection?.flush ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to flush:', err);
             setFlushStatus('error');

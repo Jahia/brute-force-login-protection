@@ -11,17 +11,19 @@ mutation saveGlobalSettings(
     $recidiveFactor: Float
     $maxBanTimeSeconds: Int
 ) {
-    bruteForceLoginProtectionSaveGlobalSettings(
-        activated: $activated
-        whitelistIps: $whitelistIps
-        ignorePatterns: $ignorePatterns
-        trustProxyHeader: $trustProxyHeader
-        emailEnabled: $emailEnabled
-        emailRecipient: $emailRecipient
-        webhookUrl: $webhookUrl
-        webhookSecret: $webhookSecret
-        auditLogMaxEntries: $auditLogMaxEntries
-        recidiveFactor: $recidiveFactor
-        maxBanTimeSeconds: $maxBanTimeSeconds
-    )
+    bruteForceLoginProtection {
+        saveGlobalSettings(
+            activated: $activated
+            whitelistIps: $whitelistIps
+            ignorePatterns: $ignorePatterns
+            trustProxyHeader: $trustProxyHeader
+            emailEnabled: $emailEnabled
+            emailRecipient: $emailRecipient
+            webhookUrl: $webhookUrl
+            webhookSecret: $webhookSecret
+            auditLogMaxEntries: $auditLogMaxEntries
+            recidiveFactor: $recidiveFactor
+            maxBanTimeSeconds: $maxBanTimeSeconds
+        )
+    }
 }

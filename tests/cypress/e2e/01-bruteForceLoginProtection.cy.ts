@@ -29,7 +29,7 @@ describe('Brute Force Login Protection', () => {
     // being live must wait on this probe before exercising the ban path.
     const waitForConfigReady = (jail: string): void => {
         cy.apollo({query: getConfigReady, variables: {jail}})
-            .its('data.bruteForceLoginProtectionConfigReady')
+            .its('data.bruteForceLoginProtection.configReady')
             .should((r: {globalReady: boolean; jailReady: boolean}) => {
                 expect(r.globalReady, 'global config holder must have received an update').to.eq(true);
                 expect(r.jailReady, `jail "${jail}" must be registered`).to.eq(true);
@@ -42,7 +42,7 @@ describe('Brute Force Login Protection', () => {
 
     it('returns global settings via GraphQL', () => {
         cy.apollo({query: getGlobalSettings})
-            .its('data.bruteForceLoginProtectionGlobalSettings')
+            .its('data.bruteForceLoginProtection.globalSettings')
             .should(settings => {
                 expect(settings).to.have.property('activated');
                 expect(settings).to.have.property('whitelistIps');
@@ -63,7 +63,7 @@ describe('Brute Force Login Protection', () => {
                 maxBanTimeSeconds: 86400
             }
         })
-            .its('data.bruteForceLoginProtectionSaveGlobalSettings')
+            .its('data.bruteForceLoginProtection.saveGlobalSettings')
             .should('eq', true);
     });
 
@@ -79,7 +79,7 @@ describe('Brute Force Login Protection', () => {
             }
         });
         cy.apollo({query: getGlobalSettings})
-            .its('data.bruteForceLoginProtectionGlobalSettings')
+            .its('data.bruteForceLoginProtection.globalSettings')
             .should(settings => {
                 expect(settings.activated).to.eq(true);
                 expect(settings.whitelistIps).to.include('192.168.0.0/24');
@@ -91,7 +91,7 @@ describe('Brute Force Login Protection', () => {
 
     it('lists jails and includes the bootstrapped login jail', () => {
         cy.apollo({query: getJails})
-            .its('data.bruteForceLoginProtectionJails')
+            .its('data.bruteForceLoginProtection.jails')
             .should((jails: Array<{name: string}>) => {
                 expect(jails).to.be.an('array');
                 const names = jails.map(j => j.name);
@@ -110,11 +110,11 @@ describe('Brute Force Login Protection', () => {
                 banTimeSeconds: 120
             }
         })
-            .its('data.bruteForceLoginProtectionSaveJail')
+            .its('data.bruteForceLoginProtection.saveJail')
             .should('eq', true);
 
         cy.apollo({query: getJails})
-            .its('data.bruteForceLoginProtectionJails')
+            .its('data.bruteForceLoginProtection.jails')
             .should((jails: Array<{name: string; maxRetry: number}>) => {
                 const found = jails.find(j => j.name === 'test');
                 expect(found, 'jail "test" must exist').to.exist;
@@ -128,11 +128,11 @@ describe('Brute Force Login Protection', () => {
             variables: {name: 'test', enabled: true, maxRetry: 3, findTimeSeconds: 60, banTimeSeconds: 120}
         });
         cy.apollo({mutation: deleteJail, variables: {name: 'test'}})
-            .its('data.bruteForceLoginProtectionDeleteJail')
+            .its('data.bruteForceLoginProtection.deleteJail')
             .should('eq', true);
 
         cy.apollo({query: getJails})
-            .its('data.bruteForceLoginProtectionJails')
+            .its('data.bruteForceLoginProtection.jails')
             .should((jails: Array<{name: string}>) => {
                 const names = jails.map(j => j.name);
                 expect(names).to.not.include('test');
@@ -144,22 +144,22 @@ describe('Brute Force Login Protection', () => {
             mutation: banIp,
             variables: {ip: '10.0.0.99', jail: 'login', durationSeconds: 60, reason: 'cypress test'}
         })
-            .its('data.bruteForceLoginProtectionBanIp')
+            .its('data.bruteForceLoginProtection.banIp')
             .should('eq', true);
 
         cy.apollo({query: getBannedIps})
-            .its('data.bruteForceLoginProtectionBannedIps')
+            .its('data.bruteForceLoginProtection.bannedIps')
             .should((bans: Array<{ip: string}>) => {
                 const ips = bans.map(b => b.ip);
                 expect(ips).to.include('10.0.0.99');
             });
 
         cy.apollo({mutation: unbanIp, variables: {ip: '10.0.0.99'}})
-            .its('data.bruteForceLoginProtectionUnbanIp')
+            .its('data.bruteForceLoginProtection.unbanIp')
             .should('eq', true);
 
         cy.apollo({query: getBannedIps})
-            .its('data.bruteForceLoginProtectionBannedIps')
+            .its('data.bruteForceLoginProtection.bannedIps')
             .should((bans: Array<{ip: string}>) => {
                 const ips = bans.map(b => b.ip);
                 expect(ips).to.not.include('10.0.0.99');
@@ -173,7 +173,7 @@ describe('Brute Force Login Protection', () => {
         });
 
         cy.apollo({query: getAuditLog, variables: {limit: 10}})
-            .its('data.bruteForceLoginProtectionAuditLog')
+            .its('data.bruteForceLoginProtection.auditLog')
             .should((entries: Array<{event: string; ip: string}>) => {
                 const banned = entries.filter(e => e.event === 'BAN' && e.ip === '10.0.0.100');
                 expect(banned.length, 'at least one BAN audit entry for the IP').to.be.greaterThan(0);
@@ -182,11 +182,11 @@ describe('Brute Force Login Protection', () => {
 
     it('clears the audit log', () => {
         cy.apollo({mutation: clearAuditLog})
-            .its('data.bruteForceLoginProtectionClearAuditLog')
+            .its('data.bruteForceLoginProtection.clearAuditLog')
             .should('eq', true);
 
         cy.apollo({query: getAuditLog, variables: {limit: 10}})
-            .its('data.bruteForceLoginProtectionAuditLog')
+            .its('data.bruteForceLoginProtection.auditLog')
             .should((entries: unknown[]) => {
                 expect(entries).to.be.an('array').that.has.length(0);
             });
@@ -194,7 +194,7 @@ describe('Brute Force Login Protection', () => {
 
     it('returns cluster status with hazelcast running', () => {
         cy.apollo({query: getClusterStatus})
-            .its('data.bruteForceLoginProtectionClusterStatus')
+            .its('data.bruteForceLoginProtection.clusterStatus')
             .should(status => {
                 expect(status.hazelcastRunning).to.eq(true);
                 expect(status.nodeCount).to.be.greaterThan(0);
@@ -329,7 +329,7 @@ describe('Brute Force Login Protection', () => {
         cy.wait(20000);
         cy.login();
         cy.apollo({query: getAuditLog, variables: {limit: 50}})
-            .its('data.bruteForceLoginProtectionAuditLog')
+            .its('data.bruteForceLoginProtection.auditLog')
             .should((entries: Array<{event: string; source: string; ip: string}>) => {
                 const bans = entries.filter(e => e.event === 'BAN');
                 expect(bans.length, 'at least one BAN event recorded').to.be.greaterThan(0);
@@ -406,7 +406,7 @@ describe('Brute Force Login Protection', () => {
         cy.wait(20000);
         cy.login();
         cy.apollo({query: getAuditLog, variables: {limit: 50}})
-            .its('data.bruteForceLoginProtectionAuditLog')
+            .its('data.bruteForceLoginProtection.auditLog')
             .should((entries: Array<{event: string; source: string; ip: string}>) => {
                 const bans = entries.filter(e => e.event === 'BAN');
                 expect(bans.length, 'at least one BAN event recorded').to.be.greaterThan(0);

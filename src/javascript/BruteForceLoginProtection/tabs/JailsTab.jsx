@@ -75,7 +75,7 @@ export const JailsTab = () => {
                     banTimeSeconds
                 }
             });
-            if (result.data?.bruteForceLoginProtectionSaveJail) {
+            if (result.data?.bruteForceLoginProtection?.saveJail) {
                 setStatus('success');
                 setEditingForm(null);
             } else {
@@ -97,7 +97,7 @@ export const JailsTab = () => {
         setConfirmDelete(null);
         try {
             const result = await deleteJail({variables: {name}});
-            setStatus(result.data?.bruteForceLoginProtectionDeleteJail ? 'success' : 'error');
+            setStatus(result.data?.bruteForceLoginProtection?.deleteJail ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to delete jail:', err);
             setStatus('error');
@@ -117,7 +117,7 @@ export const JailsTab = () => {
         );
     }
 
-    const jails = data?.bruteForceLoginProtectionJails || [];
+    const jails = data?.bruteForceLoginProtection?.jails || [];
 
     return (
         <div className={styles.bflp_tabPanel}>
