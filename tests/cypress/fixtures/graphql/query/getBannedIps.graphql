@@ -1,12 +1,14 @@
 query getBannedIps {
-    bruteForceLoginProtectionBannedIps {
-        ip
-        jail
-        source
-        bannedAt
-        bannedUntil
-        banCount
-        reason
-        remainingSeconds
+    bruteForceLoginProtection {
+        bannedIps {
+            ip
+            jail
+            source
+            bannedAt
+            bannedUntil
+            banCount
+            reason
+            remainingSeconds
+        }
     }
 }

@@ -61,8 +61,8 @@ describe('Brute Force Login Protection — permission enforcement', () => {
         it('allows the gated query for a user granted only the module permission', () => {
             queryGlobalSettingsAs(ALLOWED_USER).then((result: never) => {
                 expect(errorsOf(result), 'should have no errors').to.have.length(0);
-                expect((result as {data: {bruteForceLoginProtectionGlobalSettings: {activated: boolean}}})
-                    .data.bruteForceLoginProtectionGlobalSettings).to.have.property('activated');
+                expect((result as {data: {bruteForceLoginProtection: {globalSettings: {activated: boolean}}}})
+                    .data.bruteForceLoginProtection.globalSettings).to.have.property('activated');
             });
         });
     });

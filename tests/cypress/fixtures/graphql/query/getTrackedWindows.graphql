@@ -1,9 +1,11 @@
 query getTrackedWindows {
-    bruteForceLoginProtectionTrackedWindows {
-        ip
-        jail
-        failuresInWindow
-        oldestFailureAt
-        lastFailureAt
+    bruteForceLoginProtection {
+        trackedWindows {
+            ip
+            jail
+            failuresInWindow
+            oldestFailureAt
+            lastFailureAt
+        }
     }
 }

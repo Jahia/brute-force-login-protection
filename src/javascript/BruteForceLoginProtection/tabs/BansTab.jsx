@@ -46,7 +46,7 @@ export const BansTab = () => {
         setCurrentUnban(ip);
         try {
             const r = await unbanIp({variables: {ip}});
-            setUnbanStatus(r.data?.bruteForceLoginProtectionUnbanIp ? 'success' : 'error');
+            setUnbanStatus(r.data?.bruteForceLoginProtection?.unbanIp ? 'success' : 'error');
         } catch (err) {
             console.error('Failed to unban IP:', err);
             setUnbanStatus('error');
@@ -95,7 +95,7 @@ export const BansTab = () => {
             }
 
             const r = await banIp({variables});
-            if (r.data?.bruteForceLoginProtectionBanIp) {
+            if (r.data?.bruteForceLoginProtection?.banIp) {
                 setStatus('success');
                 setBanForm({ip: '', jail: '', durationSeconds: '', reason: ''});
             } else {
@@ -109,7 +109,7 @@ export const BansTab = () => {
 
     // F-06: memoize the sort so it doesn't run on every render
     const bans = useMemo(
-        () => [...(data?.bruteForceLoginProtectionBannedIps || [])]
+        () => [...(data?.bruteForceLoginProtection?.bannedIps || [])]
             .sort((a, b) => Number(b.bannedAt) - Number(a.bannedAt)),
         [data]
     );

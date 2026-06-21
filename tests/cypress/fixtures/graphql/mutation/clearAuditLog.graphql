@@ -1,3 +1,5 @@
 mutation clearAuditLog {
-    bruteForceLoginProtectionClearAuditLog
+    bruteForceLoginProtection {
+        clearAuditLog
+    }
 }

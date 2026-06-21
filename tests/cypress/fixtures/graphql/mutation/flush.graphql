@@ -1,3 +1,5 @@
 mutation flush {
-    bruteForceLoginProtectionFlush
+    bruteForceLoginProtection {
+        flush
+    }
 }

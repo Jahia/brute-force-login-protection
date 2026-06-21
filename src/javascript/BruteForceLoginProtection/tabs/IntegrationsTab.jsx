@@ -27,7 +27,7 @@ export const IntegrationsTab = () => {
     const {data, loading} = useQuery(GET_GLOBAL_SETTINGS, {
         fetchPolicy: 'network-only',
         onCompleted: data => {
-            const s = data?.bruteForceLoginProtectionGlobalSettings;
+            const s = data?.bruteForceLoginProtection?.globalSettings;
             if (s) {
                 setForm({
                     emailEnabled: s.emailEnabled,
@@ -54,7 +54,7 @@ export const IntegrationsTab = () => {
         try {
             const r = await testEmail();
             // F-31: use t() instead of hardcoded 'No response'
-            setEmailTestResult(r.data?.bruteForceLoginProtectionTestEmail || {success: false, message: t('integrations.noResponse')});
+            setEmailTestResult(r.data?.bruteForceLoginProtection?.testEmail || {success: false, message: t('integrations.noResponse')});
         } catch (err) {
             // F-31: use t() instead of hardcoded 'Request failed'
             setEmailTestResult({success: false, message: err.message || t('integrations.requestFailed')});
@@ -65,7 +65,7 @@ export const IntegrationsTab = () => {
         setWebhookTestResult(null);
         try {
             const r = await testWebhook();
-            setWebhookTestResult(r.data?.bruteForceLoginProtectionTestWebhook || {success: false, message: t('integrations.noResponse')});
+            setWebhookTestResult(r.data?.bruteForceLoginProtection?.testWebhook || {success: false, message: t('integrations.noResponse')});
         } catch (err) {
             setWebhookTestResult({success: false, message: err.message || t('integrations.requestFailed')});
         }
@@ -76,7 +76,7 @@ export const IntegrationsTab = () => {
     // both save paths (handleSubmit + handleClearSecretConfirm) so they stay
     // identical. trustedProxyCidrs is included so it is not dropped on save.
     const buildBaseSettings = () => {
-        const current = data?.bruteForceLoginProtectionGlobalSettings || {};
+        const current = data?.bruteForceLoginProtection?.globalSettings || {};
         return {
             activated: current.activated,
             whitelistIps: current.whitelistIps ?? '',
@@ -101,7 +101,7 @@ export const IntegrationsTab = () => {
             }
 
             const r = await saveSettings({variables});
-            if (r.data?.bruteForceLoginProtectionSaveGlobalSettings) {
+            if (r.data?.bruteForceLoginProtection?.saveGlobalSettings) {
                 setStatus('success');
                 setForm(prev => ({...prev, webhookSecret: ''}));
             } else {
@@ -126,7 +126,7 @@ export const IntegrationsTab = () => {
             // webhookSecret would clobber every other setting to undefined.
             const variables = {...buildBaseSettings(), webhookSecret: ''};
             const r = await saveSettings({variables});
-            if (r.data?.bruteForceLoginProtectionSaveGlobalSettings) {
+            if (r.data?.bruteForceLoginProtection?.saveGlobalSettings) {
                 setStatus('success');
                 setSecretConfigured(false);
             } else {
@@ -151,7 +151,7 @@ export const IntegrationsTab = () => {
         );
     }
 
-    const actions = actionsData?.bruteForceLoginProtectionBanActions || [];
+    const actions = actionsData?.bruteForceLoginProtection?.banActions || [];
 
     return (
         <div className={styles.bflp_tabPanel}>

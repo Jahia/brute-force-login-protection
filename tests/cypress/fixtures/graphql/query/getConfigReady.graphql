@@ -1,6 +1,8 @@
 query getConfigReady($jail: String) {
-    bruteForceLoginProtectionConfigReady(jail: $jail) {
-        globalReady
-        jailReady
+    bruteForceLoginProtection {
+        configReady(jail: $jail) {
+            globalReady
+            jailReady
+        }
     }
 }
