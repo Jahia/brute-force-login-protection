@@ -202,7 +202,7 @@
         <extensions>true</extensions>
         <configuration>
           <instructions>
-            <_dsannotations>org.jahia.modules.bruteforceloginprotection.*</_dsannotations>
+            <_dsannotations>org.jahia.community.bruteforceloginprotection.*</_dsannotations>
             <Import-Package>
               graphql.annotations.annotationTypes;version="[7.2,99)",
               graphql.schema;version="[13.0,99)",

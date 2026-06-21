@@ -5,7 +5,7 @@ Jahia OSGi module that detects brute-force login attempts and bans offending IPs
 ## Key Facts
 
 - **artifactId**: `brute-force-login-protection` | **version**: `3.0.2-SNAPSHOT`
-- **Java package**: `org.jahia.modules.bruteforceloginprotection`
+- **Java package**: `org.jahia.community.bruteforceloginprotection`
 - **jahia-depends**: `default,graphql-dxm-provider,serverSettings`
 - **No Blueprint/Spring** — pure OSGi DS (`@Component` annotations only)
 - **Distributed state** via embedded Hazelcast (separate cluster from Jahia's own one)
@@ -68,8 +68,8 @@ Package layout: `hazelcast/`, `spi/`, `core/`, `actions/`, `sources/`, `graphql/
 
 | Kind | PID | Storage |
 |------|-----|---------|
-| Global settings (singleton) | `org.jahia.modules.bruteforceloginprotection.global` | `org.jahia.modules.bruteforceloginprotection.global.cfg` |
-| Jail definition (factory) | `org.jahia.modules.bruteforceloginprotection.jail` | `org.jahia.modules.bruteforceloginprotection.jail-<name>.cfg` |
+| Global settings (singleton) | `org.jahia.community.bruteforceloginprotection.global` | `org.jahia.community.bruteforceloginprotection.global.cfg` |
+| Jail definition (factory) | `org.jahia.community.bruteforceloginprotection.jail` | `org.jahia.community.bruteforceloginprotection.jail-<name>.cfg` |
 
 Each jail `.cfg` MUST contain `name=<jail-id>`; the filename discriminator is only used by Felix to uniquely key the configuration on disk. Settings are read into in-memory snapshots by `GlobalConfigHolder` and `JailConfigTracker` (updated automatically when the `.cfg` changes). `SettingsService` is the single writer to ConfigurationAdmin.
 
