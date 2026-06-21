@@ -72,8 +72,8 @@ state, not configuration).
 
 | Kind | PID | Example filename |
 |------|-----|------------------|
-| Global settings (singleton) | `org.jahia.modules.bruteforceloginprotection.global` | `org.jahia.modules.bruteforceloginprotection.global.cfg` |
-| Jail definition (factory) | `org.jahia.modules.bruteforceloginprotection.jail` | `org.jahia.modules.bruteforceloginprotection.jail-login.cfg` |
+| Global settings (singleton) | `org.jahia.community.bruteforceloginprotection.global` | `org.jahia.community.bruteforceloginprotection.global.cfg` |
+| Jail definition (factory) | `org.jahia.community.bruteforceloginprotection.jail` | `org.jahia.community.bruteforceloginprotection.jail-login.cfg` |
 
 A jail `.cfg` MUST contain a `name=<jail-id>` property — that string is the jail
 identifier seen by the engine and the admin UI. The filename discriminator after
