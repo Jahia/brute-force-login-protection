@@ -8,7 +8,7 @@
   </parent>
   <groupId>org.jahia.community</groupId>
   <artifactId>brute-force-login-protection</artifactId>
-  <version>3.1.1</version>
+  <version>3.1.2-SNAPSHOT</version>
   <packaging>bundle</packaging>
   <name>Brute force login protection</name>
   <description>This is the custom module (Brute force login protection) for running on a Digital Experience Manager server.</description>
