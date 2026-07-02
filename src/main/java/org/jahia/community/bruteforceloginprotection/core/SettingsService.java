@@ -1,6 +1,7 @@
 package org.jahia.community.bruteforceloginprotection.core;
 
 import org.apache.commons.lang.StringUtils;
+import org.jahia.community.bruteforceloginprotection.CidrMatcher;
 import org.jahia.community.bruteforceloginprotection.actions.WebhookUrlValidator;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionWrapper;
@@ -15,6 +16,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.jcr.RepositoryException;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.List;
@@ -150,6 +153,72 @@ public class SettingsService {
             }
             props.put(GlobalConfigHolder.CFG_WEBHOOK_URL, u.getWebhookUrl());
         }
+        if (u.getBlocklistIps() != null) {
+            validateBlocklistIps(u.getBlocklistIps());
+            props.put(GlobalConfigHolder.CFG_BLOCKLIST, u.getBlocklistIps());
+        }
+        if (u.getTorBlocklistEnabled() != null) {
+            props.put(GlobalConfigHolder.CFG_TOR_ENABLED, String.valueOf(u.getTorBlocklistEnabled()));
+        }
+        if (u.getTorBlocklistUrl() != null) {
+            if (!u.getTorBlocklistUrl().isEmpty()) {
+                validateTorUrl(u.getTorBlocklistUrl());
+            }
+            props.put(GlobalConfigHolder.CFG_TOR_URL, u.getTorBlocklistUrl());
+        }
+    }
+
+    /**
+     * Validates every comma-separated blocklist entry as CIDR (or bare IP) notation. Unlike the
+     * whitelist (where malformed entries are skipped at match time for backward compatibility),
+     * blocklist entries are validated strictly at save time: a typo here would silently NOT block
+     * an address the operator believes is blocked.
+     */
+    static void validateBlocklistIps(String blocklist) {
+        if (StringUtils.isBlank(blocklist)) {
+            return;
+        }
+        for (String entry : blocklist.split(",")) {
+            String trimmed = entry.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                new CidrMatcher(trimmed);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid blocklist CIDR: " + AuditLogger.sanitize(trimmed));
+            }
+        }
+    }
+
+    /**
+     * Validates the Tor exit-address list URL: http/https scheme, a host, and no userinfo.
+     * Deliberately does NOT reject private/internal addresses (unlike {@link WebhookUrlValidator}):
+     * operators may legitimately host an internal mirror of the exit list. The URL is only
+     * settable by {@code bruteForceLoginProtectionAdmin}, so the residual SSRF surface is accepted.
+     */
+    static void validateTorUrl(String url) {
+        URI uri;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid Tor blocklist URL");
+        }
+        String scheme = uri.getScheme();
+        if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+            throw new IllegalArgumentException("Tor blocklist URL must use http or https");
+        }
+        if (uri.getUserInfo() != null) {
+            throw new IllegalArgumentException("Tor blocklist URL must not contain user info");
+        }
+        if (StringUtils.isBlank(uri.getHost())) {
+            throw new IllegalArgumentException("Tor blocklist URL must contain a host");
+        }
+    }
+
+    /** Clamps the Tor list refresh interval to [{@code MIN_TOR_REFRESH_SEC}, {@code MAX_TOR_REFRESH_SEC}]. */
+    static long clampTorRefreshSeconds(long seconds) {
+        return Math.max(MIN_TOR_REFRESH_SEC, Math.min(MAX_TOR_REFRESH_SEC, seconds));
     }
 
     // Lenient address shape (not RFC-complete) — enough to reject obvious garbage while accepting
@@ -227,6 +296,14 @@ public class SettingsService {
         }
         if (u.getMaxBanTimeSeconds() != null && u.getMaxBanTimeSeconds() > 0) {
             props.put(GlobalConfigHolder.CFG_MAX_BAN_TIME_SEC, String.valueOf(u.getMaxBanTimeSeconds().longValue()));
+        }
+        if (u.getTorBlocklistRefreshSeconds() != null && u.getTorBlocklistRefreshSeconds() > 0) {
+            long clamped = clampTorRefreshSeconds(u.getTorBlocklistRefreshSeconds());
+            if (clamped != u.getTorBlocklistRefreshSeconds()) {
+                LOGGER.info("BFLP: torBlocklistRefreshSeconds clamped from {} to {} (range [{}, {}])",
+                        u.getTorBlocklistRefreshSeconds(), clamped, MIN_TOR_REFRESH_SEC, MAX_TOR_REFRESH_SEC);
+            }
+            props.put(GlobalConfigHolder.CFG_TOR_REFRESH_SEC, String.valueOf(clamped));
         }
     }
 

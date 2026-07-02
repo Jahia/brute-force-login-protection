@@ -44,6 +44,10 @@ public class GlobalConfigHolder implements ManagedService {
     public static final String CFG_AUDIT_LOG_MAX = "audit_log_max_entries";
     public static final String CFG_RECIDIVE_FACTOR = "recidive_factor";
     public static final String CFG_MAX_BAN_TIME_SEC = "max_ban_time_seconds";
+    public static final String CFG_BLOCKLIST = "blocklist_ips";
+    public static final String CFG_TOR_ENABLED = "tor_blocklist_enabled";
+    public static final String CFG_TOR_URL = "tor_blocklist_url";
+    public static final String CFG_TOR_REFRESH_SEC = "tor_blocklist_refresh_seconds";
 
     private final AtomicReference<GlobalSettings> current = new AtomicReference<>(defaults());
     private volatile boolean updateReceived;
@@ -84,6 +88,9 @@ public class GlobalConfigHolder implements ManagedService {
                 .auditLogMaxEntries(DEFAULT_AUDIT_LOG_MAX)
                 .recidiveFactor(DEFAULT_RECIDIVE_FACTOR)
                 .maxBanTimeSec(DEFAULT_MAX_BAN_TIME_SEC)
+                .torBlocklistEnabled(false)
+                .torBlocklistUrl(DEFAULT_TOR_BLOCKLIST_URL)
+                .torBlocklistRefreshSeconds(DEFAULT_TOR_REFRESH_SEC)
                 .build();
     }
 
@@ -100,6 +107,15 @@ public class GlobalConfigHolder implements ManagedService {
         int auditMax = (int) longProp(d, CFG_AUDIT_LOG_MAX, DEFAULT_AUDIT_LOG_MAX);
         double recidive = doubleProp(d, CFG_RECIDIVE_FACTOR, DEFAULT_RECIDIVE_FACTOR);
         long maxBan = longProp(d, CFG_MAX_BAN_TIME_SEC, DEFAULT_MAX_BAN_TIME_SEC);
+        String blocklist = stringProp(d, CFG_BLOCKLIST, null);
+        boolean torEnabled = boolProp(d, CFG_TOR_ENABLED, false);
+        String torUrl = stringProp(d, CFG_TOR_URL, null);
+        if (StringUtils.isBlank(torUrl)) {
+            torUrl = DEFAULT_TOR_BLOCKLIST_URL;
+        }
+        // Clamp defensively: SettingsService clamps UI writes, but the .cfg can be hand-edited.
+        long torRefresh = Math.max(MIN_TOR_REFRESH_SEC,
+                Math.min(MAX_TOR_REFRESH_SEC, longProp(d, CFG_TOR_REFRESH_SEC, DEFAULT_TOR_REFRESH_SEC)));
 
         return GlobalSettings.builder()
                 .activated(activated)
@@ -114,6 +130,10 @@ public class GlobalConfigHolder implements ManagedService {
                 .auditLogMaxEntries(auditMax)
                 .recidiveFactor(recidive)
                 .maxBanTimeSec(maxBan)
+                .blocklistIps(blocklist)
+                .torBlocklistEnabled(torEnabled)
+                .torBlocklistUrl(torUrl)
+                .torBlocklistRefreshSeconds(torRefresh)
                 .build();
     }
 
