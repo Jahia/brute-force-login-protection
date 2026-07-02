@@ -100,6 +100,28 @@ OSGi `ConfigurationAdmin` storage is per-node. In a Jahia cluster you must eithe
 
 No additional Hazelcast broadcasting of settings is performed by the module.
 
+### Updating the module in a cluster
+
+The recommended procedure for updating (or uninstalling) the module on a multi-node
+cluster is **stop everywhere first, then update, then start**:
+
+1. Stop (or uninstall) the module bundle on **all** nodes. The last member to stop has
+   no migration targets, so every stop returns immediately.
+2. Deploy the new version on all nodes.
+3. Start the module everywhere. Each node re-joins the dedicated Hazelcast cluster and
+   restores active bans from the JCR mirror (startup reconciliation, ADR 0004).
+
+Rolling node-by-node updates also work — since 3.1.1 the module *terminates* its
+Hazelcast member on bundle stop instead of waiting for partition migrations
+(ADR 0005), so an update can no longer hang on `Remaining migration tasks in
+queue => N` when the base+2 port is partially firewalled or the cluster cannot
+repartition. The trade-off is a brief loss of replica redundancy for state that is
+reconstructible anyway (bans are JCR-mirrored; failure windows are transient).
+
+Whatever the procedure, make sure the module's Hazelcast port (Jahia's
+`cluster.hazelcast.bindPort` + 2, e.g. 7862 when Jahia uses 7860) is open **in both
+directions** between all cluster nodes.
+
 ### Webhook receiver guidance
 
 When verifying the `X-BFLP-Signature` header on the receiver side, **always use a constant-time
