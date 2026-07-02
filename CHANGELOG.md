@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.1-SNAPSHOT] — Unreleased
 
-- (nothing yet)
+### Fixed
+
+- **Module update no longer hangs on Hazelcast partition migrations:** on bundle stop the module now *terminates* its dedicated Hazelcast member instead of performing a graceful shutdown. Graceful shutdown blocked the OSGi bundle refresh until all partition replicas were migrated — which could stall indefinitely (`Remaining migration tasks in queue => N … completedMigrations=0`) when the base+2 port was partially firewalled or the cluster could not repartition, freezing production module updates. Safe because all Hazelcast state is reconstructible: bans are JCR-mirrored and restored at startup, failure windows are transient (see ADR 0005).
+
+### Changed
+
+- **Docs:** README gains an "Updating the module in a cluster" procedure (stop-everywhere → update → start, plus the bidirectional base+2 port requirement); new ADR 0005 records the terminate-on-deactivate decision.
 
 ## [3.1.0] — 2026-07-02
 

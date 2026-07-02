@@ -181,9 +181,17 @@ public class HazelcastInstanceManager implements Runnable {
         HazelcastInstance hz = hazelcastInstance.get();
         if (hz != null) {
             try {
-                hz.shutdown();
+                // terminate(), NOT shutdown(): graceful shutdown blocks until every partition
+                // replica owned by this member has been migrated to the rest of the cluster.
+                // When those migrations stall (firewalled base+2 port, classloader teardown
+                // mid-update, ...) the bundle stop — and therefore the whole module update —
+                // hangs for up to hazelcast.graceful.shutdown.max.wait (600s by default).
+                // Skipping replica migration is safe here: bans are mirrored to JCR and
+                // restored by the startup reconciliation pass, and failure windows are
+                // transient counters. See ADR 0005.
+                hz.getLifecycleService().terminate();
             } catch (Exception e) {
-                logger.debug("BFLP: error shutting down hazelcast", e);
+                logger.debug("BFLP: error terminating hazelcast", e);
             }
             hazelcastInstance.set(null);
         }
