@@ -185,4 +185,20 @@ public class TorExitNodeFetcherTest {
         assertThat(status.lastAttemptMs()).isZero();
         assertThat(status.lastError()).isNull();
     }
+
+    // -------------------------------------------------------------------------
+    // Single-flight fetch guard
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void fetchOnce_skippedWhileAnotherFetchIsInFlight() throws Exception {
+        TorExitNodeFetcher fetcher = new TorExitNodeFetcher();
+        java.lang.reflect.Field guard = TorExitNodeFetcher.class.getDeclaredField("fetchInProgress");
+        guard.setAccessible(true);
+        ((java.util.concurrent.atomic.AtomicBoolean) guard.get(fetcher)).set(true);
+
+        assertThat(fetcher.fetchOnce("https://example.invalid/exit-addresses")).isFalse();
+        // Skipped fetch must not touch the status fields
+        assertThat(fetcher.getStatus().lastAttemptMs()).isZero();
+    }
 }

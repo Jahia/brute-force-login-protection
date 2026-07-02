@@ -34,8 +34,10 @@ public class BlocklistService {
     public static final String REASON_TOR = "tor-exit";
 
     static final long AUDIT_THROTTLE_MS = 60L * 60 * 1000;      // one audit entry per IP per hour
-    static final int THROTTLE_PRUNE_THRESHOLD = 10_000;         // bound memory under IP-rotation floods
+    static final int THROTTLE_PRUNE_THRESHOLD = 10_000;         // start pruning stale entries past this size
+    static final int THROTTLE_HARD_CAP = 20_000;                // absolute map bound under IP-rotation floods
     private static final long THROTTLE_STALE_MS = 2 * AUDIT_THROTTLE_MS;
+    private static final long PRUNE_INTERVAL_MS = 60_000;       // full-scan prune at most once a minute
 
     @Reference
     private SettingsService settingsService;
@@ -49,6 +51,7 @@ public class BlocklistService {
     private final CidrListCache whitelistCache = new CidrListCache();
     private final CidrListCache blocklistCache = new CidrListCache();
     private final ConcurrentHashMap<String, Long> lastAuditPerIp = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong lastPruneMs = new java.util.concurrent.atomic.AtomicLong(0L);
     private final LongSupplier clock;
 
     public BlocklistService() {
@@ -90,20 +93,23 @@ public class BlocklistService {
     }
 
     /**
-     * Records a blocked attempt: INFO log line on every hit, {@code BLOCKED} audit entry at most
-     * once per IP per {@link #AUDIT_THROTTLE_MS}. Never throws — rejecting the request matters
-     * more than recording it.
+     * Records a blocked attempt: one INFO log line and one {@code BLOCKED} audit entry per IP per
+     * {@link #AUDIT_THROTTLE_MS} (every hit is still visible at DEBUG). Both channels share the
+     * throttle: a scanner hammering a blocked address must not be able to flood the application
+     * log any more than the JCR audit trail. Never throws — rejecting the request matters more
+     * than recording it.
      */
     public void onBlocked(String ip, String reason) {
         String sanitizedIp = AuditLogger.sanitize(ip);
-        if (LOGGER.isInfoEnabled()) {
-            LOGGER.info("BFLP: Blocked auth attempt from blocklisted IP {} ({})", sanitizedIp, reason);
-        }
         try {
             long now = clock.getAsLong();
             if (shouldAudit(ip, now)) {
+                LOGGER.info("BFLP: Blocked auth attempt from blocklisted IP {} ({}); further hits from this IP are logged at DEBUG for the next hour",
+                        sanitizedIp, reason);
                 auditLogger.log(AuditLogger.EVENT_BLOCKED, ip, null, reason,
                         "blocked auth attempt (" + reason + ")");
+            } else if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("BFLP: Blocked auth attempt from blocklisted IP {} ({})", sanitizedIp, reason);
             }
         } catch (RuntimeException e) {
             LOGGER.warn("BFLP: failed to audit blocked attempt from {}: {}", sanitizedIp, e.getMessage());
@@ -120,24 +126,37 @@ public class BlocklistService {
 
     private boolean shouldAudit(String ip, long now) {
         pruneThrottleMapIfNeeded(now);
-        boolean[] audit = new boolean[1];
-        lastAuditPerIp.compute(ip, (k, prev) -> {
-            if (prev == null || now - prev >= AUDIT_THROTTLE_MS) {
-                audit[0] = true;
-                return now;
+        Long prev = lastAuditPerIp.get(ip);
+        if (prev != null) {
+            if (now - prev < AUDIT_THROTTLE_MS) {
+                return false;
             }
-            return prev;
-        });
-        return audit[0];
+            // CAS so exactly one concurrent hit wins the new window.
+            return lastAuditPerIp.replace(ip, prev, now);
+        }
+        // Hard memory bound: under a flood of distinct source IPs the map must not grow without
+        // limit. Past the cap, new IPs are simply not audited (still visible at DEBUG) — dropping
+        // an audit entry is preferable to letting attacker-controlled cardinality grow the heap.
+        // Size check is approximate under concurrency, which is fine for a bound.
+        if (lastAuditPerIp.size() >= THROTTLE_HARD_CAP) {
+            return false;
+        }
+        return lastAuditPerIp.putIfAbsent(ip, now) == null;
     }
 
     /**
-     * Opportunistic bound on the throttle map: when an attacker rotates source IPs the map would
-     * otherwise grow one entry per distinct IP. Past the threshold, entries older than twice the
-     * throttle window are dropped (they can no longer suppress anything).
+     * Bounds the throttle map's stale entries without an O(n) scan per request: the full-map
+     * prune runs at most once per {@link #PRUNE_INTERVAL_MS} (CAS-elected thread) and only once
+     * the map is past {@link #THROTTLE_PRUNE_THRESHOLD}. Entries older than twice the throttle
+     * window are dropped (they can no longer suppress anything). The hot path therefore pays
+     * amortized O(1); the absolute growth bound is {@link #THROTTLE_HARD_CAP} in shouldAudit.
      */
     private void pruneThrottleMapIfNeeded(long now) {
         if (lastAuditPerIp.size() <= THROTTLE_PRUNE_THRESHOLD) {
+            return;
+        }
+        long last = lastPruneMs.get();
+        if (now - last < PRUNE_INTERVAL_MS || !lastPruneMs.compareAndSet(last, now)) {
             return;
         }
         for (Map.Entry<String, Long> e : lastAuditPerIp.entrySet()) {

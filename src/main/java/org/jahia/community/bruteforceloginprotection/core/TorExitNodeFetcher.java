@@ -67,6 +67,10 @@ public class TorExitNodeFetcher {
     private SettingsService settingsService;
 
     private final AtomicReference<Set<String>> exitAddresses = new AtomicReference<>(Collections.emptySet());
+    // Single-flight guard: forceRefresh() (GraphQL thread) and tick() (scheduler thread) must not
+    // fetch concurrently — with last-write-wins status fields, a slow stale request finishing
+    // after a fresh one would overwrite its result.
+    private final java.util.concurrent.atomic.AtomicBoolean fetchInProgress = new java.util.concurrent.atomic.AtomicBoolean(false);
     private volatile long lastSuccessMs;
     private volatile long lastAttemptMs;
     private volatile String lastError;
@@ -120,7 +124,9 @@ public class TorExitNodeFetcher {
         if (settings == null || !settings.isTorBlocklistEnabled()) {
             return IntegrationTestResult.fail("Tor blocklist is not enabled");
         }
-        fetchOnce(settings.getTorBlocklistUrl());
+        if (!fetchOnce(settings.getTorBlocklistUrl())) {
+            return IntegrationTestResult.fail("A fetch is already in progress; try again shortly");
+        }
         String error = lastError;
         return error == null
                 ? IntegrationTestResult.ok("Fetched " + exitAddresses.get().size() + " exit addresses")
@@ -156,7 +162,24 @@ public class TorExitNodeFetcher {
         return lastAttemptMs == 0L || nowMs - lastAttemptMs >= refreshSeconds * 1000L;
     }
 
-    void fetchOnce(String url) {
+    /**
+     * Performs one fetch of the exit-address list. Returns {@code false} without doing anything
+     * when another fetch is already in flight (single-flight; see {@link #fetchInProgress}).
+     */
+    boolean fetchOnce(String url) {
+        if (!fetchInProgress.compareAndSet(false, true)) {
+            LOGGER.debug("BFLP: Tor exit-list fetch skipped; another fetch is in progress");
+            return false;
+        }
+        try {
+            doFetch(url);
+            return true;
+        } finally {
+            fetchInProgress.set(false);
+        }
+    }
+
+    private void doFetch(String url) {
         long now = System.currentTimeMillis();
         HttpURLConnection conn = null;
         try {

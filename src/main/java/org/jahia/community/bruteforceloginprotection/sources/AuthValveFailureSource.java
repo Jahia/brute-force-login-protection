@@ -59,8 +59,12 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
     @Reference
     private SettingsService settingsService;
 
-    @Reference
-    private BlocklistService blocklistService;
+    // OPTIONAL + GREEDY: the pre-existing ban-enforcement path must keep working even if the
+    // blocklist component chain (BlocklistService → TorExitNodeFetcher) ever fails to activate;
+    // greedy rebinding picks the service up as soon as it appears. invoke() null-checks it.
+    @Reference(cardinality = ReferenceCardinality.OPTIONAL,
+            policyOption = org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY)
+    private volatile BlocklistService blocklistService;
 
     public AuthValveFailureSource() {
         super();

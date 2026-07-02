@@ -173,6 +173,21 @@ public class BlocklistServiceTest {
     }
 
     @Test
+    public void throttleMap_hardCapBoundsFreshChurn() {
+        settings(true, "", "0.0.0.0/0", false);
+        // Continuous churn of DISTINCT fresh IPs (the realistic rotation attack): nothing is
+        // stale, so pruning cannot help — the hard cap must bound the map instead.
+        for (int i = 0; i < BlocklistService.THROTTLE_HARD_CAP + 500; i++) {
+            service.onBlocked("10." + (i / 65_536) + "." + ((i / 256) % 256) + "." + (i % 256),
+                    BlocklistService.REASON_STATIC);
+            clock.addAndGet(1L); // keep every entry fresh
+        }
+        assertThat(service.throttleMapSize()).isLessThanOrEqualTo(BlocklistService.THROTTLE_HARD_CAP);
+        // Past the cap, audits are skipped for new IPs but only HARD_CAP entries were logged
+        verify(auditLogger, times(BlocklistService.THROTTLE_HARD_CAP)).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
     public void onBlocked_neverThrows_whenAuditLoggerFails() {
         settings(true, "", "203.0.113.0/24", false);
         org.mockito.Mockito.doThrow(new RuntimeException("JCR down"))

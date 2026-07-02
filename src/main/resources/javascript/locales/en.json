@@ -175,8 +175,8 @@
     "fetchNow": "Fetch now",
     "fetching": "Fetching…",
     "fetchNowHint": "Fetches the Tor exit list immediately on this node using the saved settings. Save before fetching if you just changed them.",
-    "noResponse": "No response received.",
-    "requestFailed": "Request failed."
+    "noResponse": "No response received from the server.",
+    "requestFailed": "The request failed. Please try again."
   },
   "flush": {
     "title": "Flush everything",
