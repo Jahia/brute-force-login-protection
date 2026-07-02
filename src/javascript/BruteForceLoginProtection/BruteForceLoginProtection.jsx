@@ -8,6 +8,7 @@ import {GeneralTab} from './tabs/GeneralTab';
 import {JailsTab} from './tabs/JailsTab';
 import {BansTab} from './tabs/BansTab';
 import {AuditTab} from './tabs/AuditTab';
+import {BlocklistTab} from './tabs/BlocklistTab';
 import {IntegrationsTab} from './tabs/IntegrationsTab';
 import {StatusAlerts} from './tabs/StatusAlerts';
 import {useTransientStatus} from './tabs/useTransientStatus';
@@ -17,6 +18,7 @@ const TABS = [
     {id: 'general', i18n: 'tab.general', Component: GeneralTab},
     {id: 'jails', i18n: 'tab.jails', Component: JailsTab},
     {id: 'bans', i18n: 'tab.bans', Component: BansTab},
+    {id: 'blocklist', i18n: 'tab.blocklist', Component: BlocklistTab},
     {id: 'audit', i18n: 'tab.audit', Component: AuditTab},
     {id: 'integrations', i18n: 'tab.integrations', Component: IntegrationsTab}
 ];
