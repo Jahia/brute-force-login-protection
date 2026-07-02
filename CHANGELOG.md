@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.2-SNAPSHOT] — Unreleased
+## [3.1.0] — 2026-07-02
 
 ### Added
 
@@ -23,10 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **saveGlobalSettings mutation:** Now accepts `trustedProxyCidrs` parameter (list of CIDR entries) to validate the remote socket address against when honoring `X-Forwarded-For` headers (improves reverse-proxy support for multi-CIDR setups).
 - **Docs and ADRs:** Updated AGENTS.md GraphQL API table to list all query/mutation signatures and arguments. ADR 0004 now reflects the implemented startup reconciliation pass (moved from "Future Improvements" to "Rationale").
-
-### Fixed
-
-- (no bug fixes in this snapshot)
 
 ## [3.0.0] — 2025-12-31
 
