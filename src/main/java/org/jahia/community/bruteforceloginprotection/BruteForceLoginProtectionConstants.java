@@ -54,4 +54,10 @@ public final class BruteForceLoginProtectionConstants {
     public static final int DEFAULT_AUDIT_LOG_MAX = 1000;
     public static final int NOTIFICATION_THROTTLE_SECONDS = 3600;
     public static final String DEFAULT_WHITELIST = "127.0.0.1/32,::1/128";
+
+    // Blocklist (static CIDR list + dynamic Tor exit-address list)
+    public static final String DEFAULT_TOR_BLOCKLIST_URL = "https://check.torproject.org/exit-addresses";
+    public static final long DEFAULT_TOR_REFRESH_SEC = 3600;
+    public static final long MIN_TOR_REFRESH_SEC = 300;
+    public static final long MAX_TOR_REFRESH_SEC = 604_800; // 7 days
 }

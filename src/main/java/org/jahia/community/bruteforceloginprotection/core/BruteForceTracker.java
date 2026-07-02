@@ -4,6 +4,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import org.apache.commons.lang.StringUtils;
 import org.jahia.api.Constants;
+import org.jahia.community.bruteforceloginprotection.CidrListCache;
 import org.jahia.community.bruteforceloginprotection.CidrMatcher;
 import org.jahia.community.bruteforceloginprotection.hazelcast.HazelcastInstanceManager;
 import org.jahia.community.bruteforceloginprotection.spi.BanAction;
@@ -77,9 +78,7 @@ public class BruteForceTracker implements FailureRecorder {
 
     // Cache for the parsed whitelist CidrMatcher list. Recomputed only when the whitelist
     // settings string changes; avoids constructing a new CidrMatcher per entry on every request.
-    private record WhitelistCache(String source, List<CidrMatcher> matchers) {}
-    private final AtomicReference<WhitelistCache> whitelistCache =
-            new AtomicReference<>(new WhitelistCache(null, Collections.emptyList()));
+    private final CidrListCache whitelistCache = new CidrListCache();
 
     @Reference
     private HazelcastInstanceManager hazelcastManager;
@@ -538,43 +537,7 @@ public class BruteForceTracker implements FailureRecorder {
     }
 
     private boolean isWhitelisted(String ip, String whitelist) {
-        if (StringUtils.isBlank(whitelist)) {
-            return false;
-        }
-        List<CidrMatcher> matchers = getWhitelistMatchers(whitelist);
-        for (CidrMatcher matcher : matchers) {
-            if (matcher.matches(ip)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Returns the parsed {@link CidrMatcher} list for the given whitelist string, rebuilding
-     * and caching it only when the string has changed. Malformed CIDR entries are silently
-     * skipped, identical to the previous per-call behaviour.
-     */
-    private List<CidrMatcher> getWhitelistMatchers(String whitelist) {
-        WhitelistCache cache = whitelistCache.get();
-        if (whitelist.equals(cache.source())) {
-            return cache.matchers();
-        }
-        List<CidrMatcher> matchers = new ArrayList<>();
-        for (String entry : whitelist.split(",")) {
-            String trimmed = StringUtils.trimToNull(entry);
-            if (trimmed == null) {
-                continue;
-            }
-            try {
-                matchers.add(new CidrMatcher(trimmed));
-            } catch (IllegalArgumentException ignored) {
-                // skip invalid CIDR — same behaviour as before
-            }
-        }
-        List<CidrMatcher> immutable = Collections.unmodifiableList(matchers);
-        whitelistCache.compareAndSet(cache, new WhitelistCache(whitelist, immutable));
-        return immutable;
+        return whitelistCache.matchesAny(ip, whitelist);
     }
 
     private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {

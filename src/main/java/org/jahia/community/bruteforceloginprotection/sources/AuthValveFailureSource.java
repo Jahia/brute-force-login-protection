@@ -4,6 +4,7 @@ import org.apache.commons.lang.StringUtils;
 import org.jahia.community.bruteforceloginprotection.BruteForceLoginProtectionConstants;
 import org.jahia.community.bruteforceloginprotection.CidrMatcher;
 import org.jahia.community.bruteforceloginprotection.core.AuditLogger;
+import org.jahia.community.bruteforceloginprotection.core.BlocklistService;
 import org.jahia.community.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.community.bruteforceloginprotection.core.SettingsService;
 import org.jahia.community.bruteforceloginprotection.spi.AuthFailureContext;
@@ -57,6 +58,13 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
 
     @Reference
     private SettingsService settingsService;
+
+    // OPTIONAL + GREEDY: the pre-existing ban-enforcement path must keep working even if the
+    // blocklist component chain (BlocklistService → TorExitNodeFetcher) ever fails to activate;
+    // greedy rebinding picks the service up as soon as it appears. invoke() null-checks it.
+    @Reference(cardinality = ReferenceCardinality.OPTIONAL,
+            policyOption = org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY)
+    private volatile BlocklistService blocklistService;
 
     public AuthValveFailureSource() {
         super();
@@ -118,6 +126,18 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             }
             request.setAttribute(LoginEngineAuthValveImpl.VALVE_RESULT, LoginEngineAuthValveImpl.BAD_PASSWORD);
             return;
+        }
+
+        // Proactive blocklist (static CIDRs + Tor exit list). Checked after the ban map so a ban
+        // keeps its recidive bookkeeping, but before any downstream auth work. Whitelist
+        // precedence is handled inside BlocklistService.
+        if (remoteAddress != null && blocklistService != null) {
+            String blockReason = blocklistService.getBlockReason(remoteAddress);
+            if (blockReason != null) {
+                blocklistService.onBlocked(remoteAddress, blockReason);
+                request.setAttribute(LoginEngineAuthValveImpl.VALVE_RESULT, LoginEngineAuthValveImpl.BAD_PASSWORD);
+                return;
+            }
         }
 
         valveContext.invokeNext(context);

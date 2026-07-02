@@ -16,6 +16,10 @@ export const GET_GLOBAL_SETTINGS = gql`
                 auditLogMaxEntries
                 recidiveFactor
                 maxBanTimeSeconds
+                blocklistIps
+                torBlocklistEnabled
+                torBlocklistUrl
+                torBlocklistRefreshSeconds
             }
         }
     }
@@ -34,7 +38,11 @@ export const SAVE_GLOBAL_SETTINGS = gql`
         $webhookSecret: String,
         $auditLogMaxEntries: Int,
         $recidiveFactor: Float,
-        $maxBanTimeSeconds: Int
+        $maxBanTimeSeconds: Int,
+        $blocklistIps: String,
+        $torBlocklistEnabled: Boolean,
+        $torBlocklistUrl: String,
+        $torBlocklistRefreshSeconds: Int
     ) {
         bruteForceLoginProtection {
             saveGlobalSettings(
@@ -49,7 +57,11 @@ export const SAVE_GLOBAL_SETTINGS = gql`
                 webhookSecret: $webhookSecret,
                 auditLogMaxEntries: $auditLogMaxEntries,
                 recidiveFactor: $recidiveFactor,
-                maxBanTimeSeconds: $maxBanTimeSeconds
+                maxBanTimeSeconds: $maxBanTimeSeconds,
+                blocklistIps: $blocklistIps,
+                torBlocklistEnabled: $torBlocklistEnabled,
+                torBlocklistUrl: $torBlocklistUrl,
+                torBlocklistRefreshSeconds: $torBlocklistRefreshSeconds
             )
         }
     }
@@ -197,6 +209,35 @@ export const TEST_WEBHOOK = gql`
     mutation TestWebhookIntegration {
         bruteForceLoginProtection {
             testWebhook {
+                success
+                message
+            }
+        }
+    }
+`;
+
+export const GET_BLOCKLIST_STATUS = gql`
+    query GetBlocklistStatus {
+        bruteForceLoginProtection {
+            blocklistStatus {
+                staticEntryCount
+                torEnabled
+                torUrl
+                torRefreshSeconds
+                torEntryCount
+                torLastFetchTime
+                torLastAttemptTime
+                torLastError
+                torListAgeSeconds
+            }
+        }
+    }
+`;
+
+export const REFRESH_TOR_BLOCKLIST = gql`
+    mutation RefreshTorBlocklist {
+        bruteForceLoginProtection {
+            refreshTorBlocklist {
                 success
                 message
             }

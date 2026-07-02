@@ -1,0 +1,8 @@
+mutation refreshTorBlocklist {
+    bruteForceLoginProtection {
+        refreshTorBlocklist {
+            success
+            message
+        }
+    }
+}

@@ -10,6 +10,10 @@ mutation saveGlobalSettings(
     $auditLogMaxEntries: Int
     $recidiveFactor: Float
     $maxBanTimeSeconds: Int
+    $blocklistIps: String
+    $torBlocklistEnabled: Boolean
+    $torBlocklistUrl: String
+    $torBlocklistRefreshSeconds: Int
 ) {
     bruteForceLoginProtection {
         saveGlobalSettings(
@@ -24,6 +28,10 @@ mutation saveGlobalSettings(
             auditLogMaxEntries: $auditLogMaxEntries
             recidiveFactor: $recidiveFactor
             maxBanTimeSeconds: $maxBanTimeSeconds
+            blocklistIps: $blocklistIps
+            torBlocklistEnabled: $torBlocklistEnabled
+            torBlocklistUrl: $torBlocklistUrl
+            torBlocklistRefreshSeconds: $torBlocklistRefreshSeconds
         )
     }
 }

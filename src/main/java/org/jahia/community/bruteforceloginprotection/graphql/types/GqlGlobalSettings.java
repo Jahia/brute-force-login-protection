@@ -57,4 +57,19 @@ public class GqlGlobalSettings {
         long v = inner.getMaxBanTimeSec();
         return v > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) v;
     }
+
+    @GraphQLField @GraphQLName("blocklistIps")
+    public String getBlocklistIps() { return inner.getBlocklistIps(); }
+
+    @GraphQLField @GraphQLName("torBlocklistEnabled")
+    public boolean isTorBlocklistEnabled() { return inner.isTorBlocklistEnabled(); }
+
+    @GraphQLField @GraphQLName("torBlocklistUrl")
+    public String getTorBlocklistUrl() { return inner.getTorBlocklistUrl(); }
+
+    @GraphQLField @GraphQLName("torBlocklistRefreshSeconds")
+    public int getTorBlocklistRefreshSeconds() {
+        long v = inner.getTorBlocklistRefreshSeconds();
+        return v > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) v;
+    }
 }

@@ -20,6 +20,10 @@ public class GlobalSettings implements Serializable {
     private final int auditLogMaxEntries;
     private final double recidiveFactor;
     private final long maxBanTimeSec;
+    private final String blocklistIps;
+    private final boolean torBlocklistEnabled;
+    private final String torBlocklistUrl;
+    private final long torBlocklistRefreshSeconds;
 
     private GlobalSettings(Builder b) {
         this.activated = b.activated;
@@ -34,6 +38,10 @@ public class GlobalSettings implements Serializable {
         this.auditLogMaxEntries = b.auditLogMaxEntries;
         this.recidiveFactor = b.recidiveFactor;
         this.maxBanTimeSec = b.maxBanTimeSec;
+        this.blocklistIps = b.blocklistIps;
+        this.torBlocklistEnabled = b.torBlocklistEnabled;
+        this.torBlocklistUrl = b.torBlocklistUrl;
+        this.torBlocklistRefreshSeconds = b.torBlocklistRefreshSeconds;
     }
 
     public boolean isActivated() { return activated; }
@@ -48,6 +56,10 @@ public class GlobalSettings implements Serializable {
     public int getAuditLogMaxEntries() { return auditLogMaxEntries; }
     public double getRecidiveFactor() { return recidiveFactor; }
     public long getMaxBanTimeSec() { return maxBanTimeSec; }
+    public String getBlocklistIps() { return blocklistIps; }
+    public boolean isTorBlocklistEnabled() { return torBlocklistEnabled; }
+    public String getTorBlocklistUrl() { return torBlocklistUrl; }
+    public long getTorBlocklistRefreshSeconds() { return torBlocklistRefreshSeconds; }
 
     public static Builder builder() {
         return new Builder();
@@ -66,6 +78,10 @@ public class GlobalSettings implements Serializable {
         private int auditLogMaxEntries;
         private double recidiveFactor;
         private long maxBanTimeSec;
+        private String blocklistIps;
+        private boolean torBlocklistEnabled;
+        private String torBlocklistUrl;
+        private long torBlocklistRefreshSeconds;
 
         public Builder activated(boolean v) { this.activated = v; return this; }
         public Builder whitelistIps(String v) { this.whitelistIps = v; return this; }
@@ -79,6 +95,10 @@ public class GlobalSettings implements Serializable {
         public Builder auditLogMaxEntries(int v) { this.auditLogMaxEntries = v; return this; }
         public Builder recidiveFactor(double v) { this.recidiveFactor = v; return this; }
         public Builder maxBanTimeSec(long v) { this.maxBanTimeSec = v; return this; }
+        public Builder blocklistIps(String v) { this.blocklistIps = v; return this; }
+        public Builder torBlocklistEnabled(boolean v) { this.torBlocklistEnabled = v; return this; }
+        public Builder torBlocklistUrl(String v) { this.torBlocklistUrl = v; return this; }
+        public Builder torBlocklistRefreshSeconds(long v) { this.torBlocklistRefreshSeconds = v; return this; }
 
         public GlobalSettings build() {
             return new GlobalSettings(this);

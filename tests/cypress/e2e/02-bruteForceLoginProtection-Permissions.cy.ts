@@ -22,8 +22,10 @@ describe('Brute Force Login Protection — permission enforcement', () => {
     const PASSWORD = 'BflpPerm9PwdTest';
     const ADMIN_PATH = '/jahia/administration/bruteForceLoginProtection';
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    /* eslint-disable @typescript-eslint/no-var-requires */
     const getGlobalSettings: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getGlobalSettings.graphql');
+    const getBlocklistStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getBlocklistStatus.graphql');
+    /* eslint-enable @typescript-eslint/no-var-requires */
 
     const errorsOf = (result: {graphQLErrors?: Array<{message: string}>; errors?: Array<{message: string}>}) =>
         result.graphQLErrors ?? result.errors ?? [];
@@ -63,6 +65,24 @@ describe('Brute Force Login Protection — permission enforcement', () => {
                 expect(errorsOf(result), 'should have no errors').to.have.length(0);
                 expect((result as {data: {bruteForceLoginProtection: {globalSettings: {activated: boolean}}}})
                     .data.bruteForceLoginProtection.globalSettings).to.have.property('activated');
+            });
+        });
+
+        it('denies blocklistStatus for a user without the permission', () => {
+            cy.apolloClient({username: DENIED_USER, password: PASSWORD});
+            cy.apollo({query: getBlocklistStatus}).then((result: never) => {
+                const errs = errorsOf(result);
+                expect(errs, 'denial errors').to.have.length.greaterThan(0);
+                expect(errs.map((e: {message: string}) => e.message).join(' ')).to.contain('Permission denied');
+            });
+        });
+
+        it('allows blocklistStatus for a user granted only the module permission', () => {
+            cy.apolloClient({username: ALLOWED_USER, password: PASSWORD});
+            cy.apollo({query: getBlocklistStatus}).then((result: never) => {
+                expect(errorsOf(result), 'should have no errors').to.have.length(0);
+                expect((result as {data: {bruteForceLoginProtection: {blocklistStatus: {staticEntryCount: number}}}})
+                    .data.bruteForceLoginProtection.blocklistStatus).to.have.property('staticEntryCount');
             });
         });
     });

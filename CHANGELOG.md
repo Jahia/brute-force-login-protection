@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **IP blocklist (static + Tor exit nodes):** New proactive blocking enforced at the auth valve, in front of any downstream authentication work:
+  - **Static blocklist:** `blocklist_ips` global setting — comma-separated IPs/CIDRs (IPv4/IPv6) that are always blocked while the protection service is activated. Entries are validated strictly at save time.
+  - **Tor exit-node blocklist:** when `tor_blocklist_enabled=true`, each cluster node periodically downloads the TorDNSEL exit-addresses export (`tor_blocklist_url`, default `https://check.torproject.org/exit-addresses`; `tor_blocklist_refresh_seconds`, clamped to [300, 604800]) and blocks matching client IPs. On fetch failure the last successfully fetched list stays enforced; the error and list age are surfaced in the admin UI. Blocklist enforcement is in-memory per node and keeps working even while Hazelcast is unavailable.
+  - **Whitelist precedence:** whitelisted IPs are never blocked (self-lockout safety valve).
+  - **Auditing:** blocked attempts are logged at INFO and recorded as a new `BLOCKED` audit event, throttled to one entry per IP per hour.
+  - **Admin UI:** new "Blocklist" tab with the static list, Tor settings, live per-node status (entry counts, last fetch, age, last error) and a "Fetch now" button.
+  - **GraphQL:** `saveGlobalSettings` gains `blocklistIps`, `torBlocklistEnabled`, `torBlocklistUrl`, `torBlocklistRefreshSeconds`; new `blocklistStatus` query and `refreshTorBlocklist` mutation.
 - **Startup reconciliation of JCR bans:** On cluster node join, the module now reconciles the authoritative Hazelcast `bflp:bans` map with the JCR mirror. Stale JCR ban nodes (expired TTL) are dropped; live bans whose Hazelcast TTL did not survive a full cluster restart are restored into the map. This is best-effort; any JCR failure is logged and does not block component activation (see ADR 0004).
 - **Test mutations:** New GraphQL mutations `bruteForceLoginProtectionTestEmail` and `bruteForceLoginProtectionTestWebhook` allow operators to synchronously verify email and webhook integrations without triggering a live ban event.
 

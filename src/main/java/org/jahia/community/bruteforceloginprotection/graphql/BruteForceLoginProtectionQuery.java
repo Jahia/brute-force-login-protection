@@ -5,15 +5,19 @@ import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.bruteforceloginprotection.core.AuditLogger;
 import org.jahia.community.bruteforceloginprotection.core.BannedIp;
+import org.jahia.community.bruteforceloginprotection.core.BlocklistService;
 import org.jahia.community.bruteforceloginprotection.core.BruteForceTracker;
 import org.jahia.community.bruteforceloginprotection.core.FailureWindow;
 import org.jahia.community.bruteforceloginprotection.core.GlobalConfigHolder;
+import org.jahia.community.bruteforceloginprotection.core.GlobalSettings;
 import org.jahia.community.bruteforceloginprotection.core.JailConfig;
 import org.jahia.community.bruteforceloginprotection.core.JailConfigTracker;
 import org.jahia.community.bruteforceloginprotection.core.SettingsService;
+import org.jahia.community.bruteforceloginprotection.core.TorExitNodeFetcher;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlAuditEntry;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlBanActionInfo;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlBannedIp;
+import org.jahia.community.bruteforceloginprotection.graphql.types.GqlBlocklistStatus;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlClusterStatus;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlConfigReadiness;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlFailureWindow;
@@ -126,6 +130,34 @@ public class BruteForceLoginProtectionQuery {
         boolean globalReady = global != null && global.isReady();
         boolean jailReady = tracker != null && jail != null && tracker.hasJail(jail);
         return new GqlConfigReadiness(globalReady, jailReady);
+    }
+
+    @GraphQLField
+    @GraphQLName("blocklistStatus")
+    @GraphQLDescription("Live status of the static + Tor exit-address blocklists on this node: "
+            + "entry counts, last fetch time/age, and last fetch error (null when healthy).")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
+    public GqlBlocklistStatus blocklistStatus() {
+        SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
+        BlocklistService blocklist = BundleUtils.getOsgiService(BlocklistService.class, null);
+        TorExitNodeFetcher fetcher = BundleUtils.getOsgiService(TorExitNodeFetcher.class, null);
+        if (svc == null) {
+            return null;
+        }
+        GlobalSettings settings = svc.getGlobalSettings();
+        TorExitNodeFetcher.TorStatus tor = fetcher != null
+                ? fetcher.getStatus()
+                : new TorExitNodeFetcher.TorStatus(0, 0L, 0L, null);
+        return new GqlBlocklistStatus(
+                blocklist != null ? blocklist.getStaticEntryCount() : 0,
+                settings.isTorBlocklistEnabled(),
+                settings.getTorBlocklistUrl(),
+                settings.getTorBlocklistRefreshSeconds(),
+                tor.entryCount(),
+                tor.lastSuccessMs(),
+                tor.lastAttemptMs(),
+                tor.lastError(),
+                System.currentTimeMillis());
     }
 
     @GraphQLField
