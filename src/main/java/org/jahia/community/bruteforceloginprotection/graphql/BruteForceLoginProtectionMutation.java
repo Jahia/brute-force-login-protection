@@ -11,6 +11,7 @@ import org.jahia.community.bruteforceloginprotection.core.BruteForceTracker;
 import org.jahia.community.bruteforceloginprotection.core.GlobalSettingsUpdate;
 import org.jahia.community.bruteforceloginprotection.core.IntegrationTestResult;
 import org.jahia.community.bruteforceloginprotection.core.SettingsService;
+import org.jahia.community.bruteforceloginprotection.core.TorExitNodeFetcher;
 import org.jahia.community.bruteforceloginprotection.graphql.types.GqlTestResult;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
@@ -37,7 +38,11 @@ public class BruteForceLoginProtectionMutation {
             @GraphQLName("webhookSecret") @GraphQLDescription("null = leave unchanged; \"\" = clear") String webhookSecret,
             @GraphQLName("auditLogMaxEntries") Integer auditLogMaxEntries,
             @GraphQLName("recidiveFactor") Double recidiveFactor,
-            @GraphQLName("maxBanTimeSeconds") Integer maxBanTimeSeconds) {
+            @GraphQLName("maxBanTimeSeconds") Integer maxBanTimeSeconds,
+            @GraphQLName("blocklistIps") @GraphQLDescription("Comma-separated always-blocked IPs/CIDRs; \"\" = clear") String blocklistIps,
+            @GraphQLName("torBlocklistEnabled") Boolean torBlocklistEnabled,
+            @GraphQLName("torBlocklistUrl") String torBlocklistUrl,
+            @GraphQLName("torBlocklistRefreshSeconds") Integer torBlocklistRefreshSeconds) {
         SettingsService svc = BundleUtils.getOsgiService(SettingsService.class, null);
         if (svc == null) return Boolean.FALSE;
         GlobalSettingsUpdate update = GlobalSettingsUpdate.builder()
@@ -53,6 +58,10 @@ public class BruteForceLoginProtectionMutation {
                 .auditLogMaxEntries(auditLogMaxEntries)
                 .recidiveFactor(recidiveFactor)
                 .maxBanTimeSeconds(maxBanTimeSeconds)
+                .blocklistIps(blocklistIps)
+                .torBlocklistEnabled(torBlocklistEnabled)
+                .torBlocklistUrl(torBlocklistUrl)
+                .torBlocklistRefreshSeconds(torBlocklistRefreshSeconds)
                 .build();
         return svc.saveGlobalSettings(update);
     }
@@ -131,6 +140,18 @@ public class BruteForceLoginProtectionMutation {
             return new GqlTestResult(IntegrationTestResult.fail("Email ban action is not registered"));
         }
         return new GqlTestResult(action.sendTest());
+    }
+
+    @GraphQLField
+    @GraphQLName("refreshTorBlocklist")
+    @GraphQLDescription("Synchronously fetches the Tor exit-address list on this node using the currently persisted settings, bypassing the schedule.")
+    @GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")
+    public GqlTestResult refreshTorBlocklist() {
+        TorExitNodeFetcher fetcher = BundleUtils.getOsgiService(TorExitNodeFetcher.class, null);
+        if (fetcher == null) {
+            return new GqlTestResult(IntegrationTestResult.fail("Tor exit-node fetcher is not registered"));
+        }
+        return new GqlTestResult(fetcher.forceRefresh());
     }
 
     @GraphQLField
