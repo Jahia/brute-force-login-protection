@@ -30,6 +30,7 @@ public class AuditLogger {
     public static final String EVENT_UNBAN = "UNBAN";
     public static final String EVENT_FAILURE = "FAILURE";
     public static final String EVENT_CONFIG_CHANGE = "CONFIG_CHANGE";
+    public static final String EVENT_BLOCKED = "BLOCKED";
 
     @Reference
     private JCRTemplate jcrTemplate;
