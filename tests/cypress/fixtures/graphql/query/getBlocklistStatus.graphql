@@ -1,0 +1,15 @@
+query getBlocklistStatus {
+    bruteForceLoginProtection {
+        blocklistStatus {
+            staticEntryCount
+            torEnabled
+            torUrl
+            torRefreshSeconds
+            torEntryCount
+            torLastFetchTime
+            torLastAttemptTime
+            torLastError
+            torListAgeSeconds
+        }
+    }
+}

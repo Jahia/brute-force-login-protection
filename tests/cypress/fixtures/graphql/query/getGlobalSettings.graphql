@@ -12,6 +12,10 @@ query getGlobalSettings {
             auditLogMaxEntries
             recidiveFactor
             maxBanTimeSeconds
+            blocklistIps
+            torBlocklistEnabled
+            torBlocklistUrl
+            torBlocklistRefreshSeconds
         }
     }
 }
