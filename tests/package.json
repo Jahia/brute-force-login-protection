@@ -11,7 +11,7 @@
     "@faker-js/faker": "^10.0.0",
     "@jahia/cypress": "^7.0.0",
     "@jahia/eslint-config": "^2.1.2",
-    "@typescript-eslint/eslint-plugin": "^5.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.60.1",
     "babel-loader": "^10.1.1",
     "babel-plugin-istanbul": "^6.1.1",
