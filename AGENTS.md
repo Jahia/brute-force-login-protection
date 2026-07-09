@@ -48,7 +48,7 @@ Package layout: `hazelcast/`, `spi/`, `core/`, `actions/`, `sources/`, `graphql/
 | Query | `bruteForceLoginProtectionBanActions` | — | `[GqlBanActionInfo]` |
 | Query | `bruteForceLoginProtectionClusterStatus` | — | `GqlClusterStatus` |
 | Query | `bruteForceLoginProtectionConfigReady` | `jail?` | `GqlConfigReadiness { globalReady, jailReady }` |
-| Mutation | `bruteForceLoginProtectionSaveGlobalSettings` | `activated`, `whitelistIps`, `ignorePatterns`, `trustProxyHeader`, `trustedProxyCidrs`, `emailEnabled`, `emailRecipient`, `webhookUrl`, `webhookSecret`, `auditLogMaxEntries`, `recidiveFactor`, `maxBanTimeSeconds` | Boolean |
+| Mutation | `bruteForceLoginProtectionSaveGlobalSettings` | `activated`, `whitelistIps`, `ignorePatterns`, `ignorePaths`, `trustProxyHeader`, `trustedProxyCidrs`, `emailEnabled`, `emailRecipient`, `webhookUrl`, `webhookSecret`, `auditLogMaxEntries`, `recidiveFactor`, `maxBanTimeSeconds` | Boolean |
 | Mutation | `bruteForceLoginProtectionSaveJail` | `name!`, `enabled`, `maxRetry`, `findTimeSeconds`, `banTimeSeconds` | Boolean |
 | Mutation | `bruteForceLoginProtectionDeleteJail` | `name!` | Boolean |
 | Mutation | `bruteForceLoginProtectionUnbanIp` | `ip!` | Boolean |
@@ -175,3 +175,4 @@ yarn report:merge && yarn report:html   # merge mochawesome JSON → HTML report
 - **Frontend CSS class selectors use CSS Modules** — match with `[class*="bflp_..."]` in Cypress tests.
 - **`yarn run lint`** may fail with lockfile errors; run ESLint directly: `./node/node ./node_modules/.bin/eslint src/javascript`.
 - **Email throttle** — block-notification email is throttled per-IP via `bflp:notifMarkers` (cluster-wide) to prevent mail-flood DoS.
+- **`ignore_paths` vs `ignore_patterns`.** Two distinct exemptions: `ignore_patterns` is a list of **regexes matched (anchored, full-match, lower-cased) against the username** (ReDoS-guarded via a bounded executor). `ignore_paths` is a list of **literal case-sensitive substrings matched against `request.getRequestURI()`** — *not* regex, checked in `AuthValveFailureSource.invoke()` before the detector chain runs. Use `ignore_paths` when a non-login endpoint is falsely triggering a jail because a client sends a stale/wrong `Authorization` header on it (the built-in Basic/APIToken/jahiatoken detectors fire on header presence regardless of URL, since the valve is at position 0). Both only skip failure *detection*; ban *enforcement* is unaffected.

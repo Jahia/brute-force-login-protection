@@ -11,6 +11,7 @@ public class GlobalSettings implements Serializable {
     private final boolean activated;
     private final String whitelistIps;
     private final List<String> ignorePatterns;
+    private final List<String> ignorePaths;
     private final boolean trustProxyHeader;
     private final List<String> trustedProxyCidrs;
     private final boolean emailEnabled;
@@ -29,6 +30,7 @@ public class GlobalSettings implements Serializable {
         this.activated = b.activated;
         this.whitelistIps = b.whitelistIps;
         this.ignorePatterns = b.ignorePatterns == null ? Collections.emptyList() : Collections.unmodifiableList(b.ignorePatterns);
+        this.ignorePaths = b.ignorePaths == null ? Collections.emptyList() : Collections.unmodifiableList(b.ignorePaths);
         this.trustProxyHeader = b.trustProxyHeader;
         this.trustedProxyCidrs = b.trustedProxyCidrs == null ? Collections.emptyList() : Collections.unmodifiableList(b.trustedProxyCidrs);
         this.emailEnabled = b.emailEnabled;
@@ -47,6 +49,7 @@ public class GlobalSettings implements Serializable {
     public boolean isActivated() { return activated; }
     public String getWhitelistIps() { return whitelistIps; }
     public List<String> getIgnorePatterns() { return ignorePatterns; }
+    public List<String> getIgnorePaths() { return ignorePaths; }
     public boolean isTrustProxyHeader() { return trustProxyHeader; }
     public List<String> getTrustedProxyCidrs() { return trustedProxyCidrs; }
     public boolean isEmailEnabled() { return emailEnabled; }
@@ -69,6 +72,7 @@ public class GlobalSettings implements Serializable {
         private boolean activated;
         private String whitelistIps;
         private List<String> ignorePatterns;
+        private List<String> ignorePaths;
         private boolean trustProxyHeader;
         private List<String> trustedProxyCidrs;
         private boolean emailEnabled;
@@ -86,6 +90,7 @@ public class GlobalSettings implements Serializable {
         public Builder activated(boolean v) { this.activated = v; return this; }
         public Builder whitelistIps(String v) { this.whitelistIps = v; return this; }
         public Builder ignorePatterns(List<String> v) { this.ignorePatterns = v; return this; }
+        public Builder ignorePaths(List<String> v) { this.ignorePaths = v; return this; }
         public Builder trustProxyHeader(boolean v) { this.trustProxyHeader = v; return this; }
         public Builder trustedProxyCidrs(List<String> v) { this.trustedProxyCidrs = v; return this; }
         public Builder emailEnabled(boolean v) { this.emailEnabled = v; return this; }

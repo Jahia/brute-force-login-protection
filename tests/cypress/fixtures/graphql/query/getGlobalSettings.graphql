@@ -4,6 +4,7 @@ query getGlobalSettings {
             activated
             whitelistIps
             ignorePatterns
+            ignorePaths
             trustProxyHeader
             emailEnabled
             emailRecipient

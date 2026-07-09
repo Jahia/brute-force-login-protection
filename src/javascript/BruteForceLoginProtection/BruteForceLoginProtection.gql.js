@@ -7,6 +7,7 @@ export const GET_GLOBAL_SETTINGS = gql`
                 activated
                 whitelistIps
                 ignorePatterns
+                ignorePaths
                 trustProxyHeader
                 trustedProxyCidrs
                 emailEnabled
@@ -30,6 +31,7 @@ export const SAVE_GLOBAL_SETTINGS = gql`
         $activated: Boolean,
         $whitelistIps: String,
         $ignorePatterns: [String!],
+        $ignorePaths: [String!],
         $trustProxyHeader: Boolean,
         $trustedProxyCidrs: [String!],
         $emailEnabled: Boolean,
@@ -49,6 +51,7 @@ export const SAVE_GLOBAL_SETTINGS = gql`
                 activated: $activated,
                 whitelistIps: $whitelistIps,
                 ignorePatterns: $ignorePatterns,
+                ignorePaths: $ignorePaths,
                 trustProxyHeader: $trustProxyHeader,
                 trustedProxyCidrs: $trustedProxyCidrs,
                 emailEnabled: $emailEnabled,

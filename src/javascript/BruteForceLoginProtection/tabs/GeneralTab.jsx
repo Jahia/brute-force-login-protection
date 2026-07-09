@@ -11,6 +11,7 @@ const DEFAULTS = {
     activated: false,
     whitelistIps: '127.0.0.1/32,::1/128',
     ignorePatterns: '',
+    ignorePaths: '',
     trustProxyHeader: false,
     recidiveFactor: 2.0,
     maxBanTimeSeconds: 604800,
@@ -36,6 +37,7 @@ export const GeneralTab = () => {
                     activated: s.activated,
                     whitelistIps: s.whitelistIps ?? '',
                     ignorePatterns: (s.ignorePatterns || []).join('\n'),
+                    ignorePaths: (s.ignorePaths || []).join('\n'),
                     trustProxyHeader: s.trustProxyHeader,
                     recidiveFactor: s.recidiveFactor ?? 2.0,
                     maxBanTimeSeconds: s.maxBanTimeSeconds ?? 604800,
@@ -102,11 +104,16 @@ export const GeneralTab = () => {
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean);
+            const ignorePaths = form.ignorePaths
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean);
             const result = await saveSettings({
                 variables: {
                     activated: form.activated,
                     whitelistIps: form.whitelistIps,
                     ignorePatterns,
+                    ignorePaths,
                     trustProxyHeader: form.trustProxyHeader,
                     recidiveFactor: Number(form.recidiveFactor),
                     maxBanTimeSeconds: Number.parseInt(form.maxBanTimeSeconds, 10),
@@ -189,6 +196,24 @@ export const GeneralTab = () => {
                         aria-describedby="bflp-gen-ignore-hint"
                         value={form.ignorePatterns}
                         onChange={e => setForm(prev => ({...prev, ignorePatterns: e.target.value}))}
+                    />
+                </div>
+
+                <div className={styles.bflp_fieldGroup}>
+                    <label className={styles.bflp_label} htmlFor="bflp-gen-ignore-paths">
+                        {t('general.ignorePaths')}
+                    </label>
+                    <p id="bflp-gen-ignore-paths-hint" className={styles.bflp_hint}>
+                        {t('general.ignorePathsHint')}
+                    </p>
+                    <textarea
+                        id="bflp-gen-ignore-paths"
+                        className={styles.bflp_textarea}
+                        rows={4}
+                        autoComplete="off"
+                        aria-describedby="bflp-gen-ignore-paths-hint"
+                        value={form.ignorePaths}
+                        onChange={e => setForm(prev => ({...prev, ignorePaths: e.target.value}))}
                     />
                 </div>
 
