@@ -120,6 +120,12 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         HttpServletRequest request = authContext.getRequest();
         String remoteAddress = retrieveRemoteAddress(request);
 
+        // Capture the request URI BEFORE invokeNext(): downstream valves may internally forward the
+        // request (e.g. to render the 401/login page), and per the servlet spec that mutates
+        // getRequestURI() to the forwarded path. Both the ignore-path decision and the audited
+        // requestPath must reflect the ORIGINAL inbound URI, so we snapshot it here.
+        String requestUri = request.getRequestURI();
+
         if (remoteAddress != null && failureRecorder != null && failureRecorder.isIpCurrentlyBanned(remoteAddress)) {
             if (LOGGER.isInfoEnabled()) {
                 LOGGER.info("BFLP: Blocked auth attempt from banned IP {}", AuditLogger.sanitize(remoteAddress));
@@ -152,7 +158,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         // in ignorePaths to exempt such traffic. Only failure DETECTION is skipped here — the ban
         // enforcement above (banned-IP short-circuit + blocklist) still applies on every path.
         if (settingsService != null
-                && matchesIgnoredPath(request.getRequestURI(), settingsService.getGlobalSettings().getIgnorePaths())) {
+                && matchesIgnoredPath(requestUri, settingsService.getGlobalSettings().getIgnorePaths())) {
             return;
         }
 
@@ -161,7 +167,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
 
         FailureSignal signal = runDetectors(detectionContext);
         if (signal != null) {
-            recordFailure(remoteAddress, signal, request);
+            recordFailure(remoteAddress, signal, request, requestUri);
         }
     }
 
@@ -182,7 +188,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         return null;
     }
 
-    private void recordFailure(String remoteAddress, FailureSignal signal, HttpServletRequest request) {
+    private void recordFailure(String remoteAddress, FailureSignal signal, HttpServletRequest request, String requestUri) {
         FailureEvent event = FailureEvent.builder()
                 .ip(remoteAddress)
                 .sourceName(signal.getSourceName())
@@ -190,7 +196,7 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
                 .timestampMs(System.currentTimeMillis())
                 .username(signal.getUsername())
                 .userAgent(request.getHeader("User-Agent"))
-                .requestPath(request.getRequestURI())
+                .requestPath(requestUri)
                 .extras(signal.getExtras())
                 .build();
         try {
