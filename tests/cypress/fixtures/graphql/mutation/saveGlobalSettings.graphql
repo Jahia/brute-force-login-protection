@@ -2,6 +2,7 @@ mutation saveGlobalSettings(
     $activated: Boolean
     $whitelistIps: String
     $ignorePatterns: [String]
+    $ignorePaths: [String]
     $trustProxyHeader: Boolean
     $emailEnabled: Boolean
     $emailRecipient: String
@@ -20,6 +21,7 @@ mutation saveGlobalSettings(
             activated: $activated
             whitelistIps: $whitelistIps
             ignorePatterns: $ignorePatterns
+            ignorePaths: $ignorePaths
             trustProxyHeader: $trustProxyHeader
             emailEnabled: $emailEnabled
             emailRecipient: $emailRecipient
