@@ -42,6 +42,8 @@
     "whitelistIpsInvalid": "Whitelist contains invalid CIDR entries. Expected format: a.b.c.d/n or ipv6/n.",
     "ignorePatterns": "Ignore patterns (one regex per line)",
     "ignorePatternsHint": "Regular expressions applied to log lines / failure messages. Matching events are ignored, mirroring fail2ban's ignoreregex.",
+    "ignorePaths": "Ignore request paths (one per line)",
+    "ignorePathsHint": "Literal URI substrings (not regex, case-sensitive). Requests whose URI contains any entry never count as login failures — useful for non-login endpoints hit with a stale or wrong Authorization header. Ban enforcement is unaffected. Example: modules-repository.moduleList.json",
     "trustProxyHeader": "Trust X-Forwarded-For header",
     "trustProxyHeaderHint": "Enable only when Jahia is behind a trusted reverse proxy; otherwise attackers can rotate the header to evade detection.",
     "recidiveFactor": "Recidive factor",

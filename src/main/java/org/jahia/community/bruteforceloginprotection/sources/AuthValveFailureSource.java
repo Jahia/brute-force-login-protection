@@ -146,6 +146,16 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
             return;
         }
 
+        // A request to a non-login endpoint that merely carries a stale or misconfigured credential
+        // header (e.g. a broken client polling a public content URL with a wrong Authorization
+        // header) is not a login attempt and must not accrue failures. Operators list URI substrings
+        // in ignorePaths to exempt such traffic. Only failure DETECTION is skipped here — the ban
+        // enforcement above (banned-IP short-circuit + blocklist) still applies on every path.
+        if (settingsService != null
+                && matchesIgnoredPath(request.getRequestURI(), settingsService.getGlobalSettings().getIgnorePaths())) {
+            return;
+        }
+
         AuthFailureContext detectionContext = new AuthFailureContext(
                 request, authContext, isAuthenticated(authContext), remoteAddress);
 
@@ -302,6 +312,28 @@ public final class AuthValveFailureSource extends BaseAuthValve implements Failu
         } catch (java.net.UnknownHostException e) {
             return false;
         }
+    }
+
+    /**
+     * True when {@code requestUri} contains any operator-configured ignore-path entry. Matching is a
+     * case-sensitive literal substring test (deliberately NOT a regex): this runs on every request
+     * through the auth pipeline, so it is kept allocation-light and immune to ReDoS, unlike the
+     * username {@code ignorePatterns}. Substring (rather than prefix) matching is robust to Jahia's
+     * URI rewriting, where the same resource is reachable both as a vanity URL and as an internal
+     * {@code /cms/render/...} path that share a distinctive tail (e.g. a content endpoint filename).
+     *
+     * <p>Package-private for unit testing.</p>
+     */
+    static boolean matchesIgnoredPath(String requestUri, List<String> ignorePaths) {
+        if (requestUri == null || ignorePaths == null || ignorePaths.isEmpty()) {
+            return false;
+        }
+        for (String entry : ignorePaths) {
+            if (entry != null && !entry.isEmpty() && requestUri.contains(entry)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Visible for testing. */

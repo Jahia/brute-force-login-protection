@@ -35,6 +35,7 @@ public class GlobalConfigHolder implements ManagedService {
     public static final String CFG_ACTIVATED = "activated";
     public static final String CFG_WHITELIST = "whitelist_ips";
     public static final String CFG_IGNORE_PATTERNS = "ignore_patterns";
+    public static final String CFG_IGNORE_PATHS = "ignore_paths";
     public static final String CFG_TRUST_PROXY = "trust_x_forwarded_for";
     public static final String CFG_TRUSTED_PROXY_CIDRS = "trusted_proxy_cidrs";
     public static final String CFG_EMAIL_ENABLED = "email_enabled";
@@ -82,6 +83,7 @@ public class GlobalConfigHolder implements ManagedService {
                 .activated(false)
                 .whitelistIps(DEFAULT_WHITELIST)
                 .ignorePatterns(Collections.emptyList())
+                .ignorePaths(Collections.emptyList())
                 .trustProxyHeader(false)
                 .trustedProxyCidrs(Collections.emptyList())
                 .emailEnabled(false)
@@ -98,6 +100,7 @@ public class GlobalConfigHolder implements ManagedService {
         boolean activated = boolProp(d, CFG_ACTIVATED, false);
         String whitelist = stringProp(d, CFG_WHITELIST, DEFAULT_WHITELIST);
         List<String> ignore = stringListProp(d, CFG_IGNORE_PATTERNS);
+        List<String> ignorePaths = stringListProp(d, CFG_IGNORE_PATHS);
         boolean trustProxy = boolProp(d, CFG_TRUST_PROXY, false);
         List<String> trustedProxyCidrs = stringListProp(d, CFG_TRUSTED_PROXY_CIDRS);
         boolean emailEnabled = boolProp(d, CFG_EMAIL_ENABLED, false);
@@ -121,6 +124,7 @@ public class GlobalConfigHolder implements ManagedService {
                 .activated(activated)
                 .whitelistIps(whitelist)
                 .ignorePatterns(ignore)
+                .ignorePaths(ignorePaths)
                 .trustProxyHeader(trustProxy)
                 .trustedProxyCidrs(trustedProxyCidrs)
                 .emailEnabled(emailEnabled)

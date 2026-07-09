@@ -58,11 +58,33 @@ The dedicated Hazelcast instance ships with two opt-in hardening options:
 
 Go to **Administration → Server settings → Configuration → Brute force login protection**.
 
-- **General** — toggle the protection on/off, define the IP whitelist (CIDR), ignore patterns for usernames, trust of `X-Forwarded-For`, recidive factor, max ban time, audit log size.
+- **General** — toggle the protection on/off, define the IP whitelist (CIDR), ignore patterns for usernames, ignore paths (URI substrings exempt from detection), trust of `X-Forwarded-For`, recidive factor, max ban time, audit log size.
 - **Jails** — create/edit/delete jails. Each jail has: `enabled`, `maxRetry`, `findTimeSeconds`, `banTimeSeconds`.
 - **Bans** — view currently banned IPs, manually ban an IP, or unban one.
 - **Audit** — browse recent events, clear the log.
 - **Integrations** — configure the email recipient and the webhook URL/secret.
+
+### Ignore paths (exempting non-login endpoints)
+
+The enforcement valve sits at position 0 of the auth pipeline and inspects **every** request, not
+just login POSTs. The built-in HTTP Basic / APIToken / `jahiatoken` detectors fire whenever an
+unauthenticated request merely *carries* the corresponding credential header — regardless of the
+target URL. A misconfigured or buggy client that resends a wrong `Authorization` header on ordinary
+(non-login) requests will therefore accumulate failures and can get its IP banned even though it
+never attempted a protected login.
+
+`ignore_paths` fixes this. It is a comma-separated list of **literal URI substrings** (case-sensitive,
+**not** regex). If `request.getRequestURI()` contains any entry, the request is exempt from failure
+detection. Ban *enforcement* is unaffected — an already-banned IP is still blocked on every path.
+
+Substring (rather than prefix) matching is deliberate: the same Jahia resource is reachable both as a
+vanity URL and as an internal `/cms/render/...` path that share a distinctive tail, so a single entry
+covers both. Example — exempting the store module-list endpoint, which some Jahia versions poll with a
+wrong default `Authorization` header:
+
+```
+ignore_paths=modules-repository.moduleList.json
+```
 
 ### Where settings are stored
 

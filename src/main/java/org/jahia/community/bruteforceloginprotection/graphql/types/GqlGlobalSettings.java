@@ -26,6 +26,10 @@ public class GqlGlobalSettings {
     @GraphQLField @GraphQLName("ignorePatterns")
     public List<String> getIgnorePatterns() { return inner.getIgnorePatterns(); }
 
+    @GraphQLField @GraphQLName("ignorePaths")
+    @GraphQLDescription("Literal URI substrings whose requests are exempt from failure detection")
+    public List<String> getIgnorePaths() { return inner.getIgnorePaths(); }
+
     @GraphQLField @GraphQLName("trustProxyHeader")
     public boolean isTrustProxyHeader() { return inner.isTrustProxyHeader(); }
 

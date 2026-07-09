@@ -30,6 +30,7 @@ public class BruteForceLoginProtectionMutation {
             @GraphQLName("activated") Boolean activated,
             @GraphQLName("whitelistIps") String whitelistIps,
             @GraphQLName("ignorePatterns") List<String> ignorePatterns,
+            @GraphQLName("ignorePaths") @GraphQLDescription("Literal URI substrings whose requests never count as login failures (e.g. a public content endpoint hit with a stale Authorization header)") List<String> ignorePaths,
             @GraphQLName("trustProxyHeader") Boolean trustProxyHeader,
             @GraphQLName("trustedProxyCidrs") List<String> trustedProxyCidrs,
             @GraphQLName("emailEnabled") Boolean emailEnabled,
@@ -49,6 +50,7 @@ public class BruteForceLoginProtectionMutation {
                 .activated(activated)
                 .whitelistIps(whitelistIps)
                 .ignorePatterns(ignorePatterns)
+                .ignorePaths(ignorePaths)
                 .trustProxyHeader(trustProxyHeader)
                 .trustedProxyCidrs(trustedProxyCidrs)
                 .emailEnabled(emailEnabled)

@@ -12,6 +12,7 @@ public final class GlobalSettingsUpdate {
     private final Boolean activated;
     private final String whitelistIps;
     private final List<String> ignorePatterns;
+    private final List<String> ignorePaths;
     private final Boolean trustProxyHeader;
     private final List<String> trustedProxyCidrs;
     private final Boolean emailEnabled;
@@ -30,6 +31,7 @@ public final class GlobalSettingsUpdate {
         this.activated = b.activated;
         this.whitelistIps = b.whitelistIps;
         this.ignorePatterns = b.ignorePatterns;
+        this.ignorePaths = b.ignorePaths;
         this.trustProxyHeader = b.trustProxyHeader;
         this.trustedProxyCidrs = b.trustedProxyCidrs;
         this.emailEnabled = b.emailEnabled;
@@ -48,6 +50,7 @@ public final class GlobalSettingsUpdate {
     public Boolean getActivated() { return activated; }
     public String getWhitelistIps() { return whitelistIps; }
     public List<String> getIgnorePatterns() { return ignorePatterns; }
+    public List<String> getIgnorePaths() { return ignorePaths; }
     public Boolean getTrustProxyHeader() { return trustProxyHeader; }
     public List<String> getTrustedProxyCidrs() { return trustedProxyCidrs; }
     public Boolean getEmailEnabled() { return emailEnabled; }
@@ -70,6 +73,7 @@ public final class GlobalSettingsUpdate {
         private Boolean activated;
         private String whitelistIps;
         private List<String> ignorePatterns;
+        private List<String> ignorePaths;
         private Boolean trustProxyHeader;
         private List<String> trustedProxyCidrs;
         private Boolean emailEnabled;
@@ -87,6 +91,7 @@ public final class GlobalSettingsUpdate {
         public Builder activated(Boolean v) { this.activated = v; return this; }
         public Builder whitelistIps(String v) { this.whitelistIps = v; return this; }
         public Builder ignorePatterns(List<String> v) { this.ignorePatterns = v; return this; }
+        public Builder ignorePaths(List<String> v) { this.ignorePaths = v; return this; }
         public Builder trustProxyHeader(Boolean v) { this.trustProxyHeader = v; return this; }
         public Builder trustedProxyCidrs(List<String> v) { this.trustedProxyCidrs = v; return this; }
         public Builder emailEnabled(Boolean v) { this.emailEnabled = v; return this; }

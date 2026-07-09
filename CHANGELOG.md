@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.2-SNAPSHOT] — Unreleased
 
-- (nothing yet)
+### Added
+
+- **Ignore-paths exemption (`ignore_paths`):** New global setting listing literal URI substrings whose requests are exempt from failure detection. The auth valve runs at pipeline position 0 on *every* request, so a non-login endpoint hit with a stale or wrong `Authorization` header (e.g. a broken client polling a public content URL) was previously counted as a failed login and could ban a legitimate client. Matching is a case-sensitive literal substring test against `request.getRequestURI()` — deliberately not a regex, to stay allocation-light and ReDoS-free on the hot path, and robust to Jahia's vanity-vs-`/cms/render` URI rewriting. Only failure *detection* is skipped; ban *enforcement* (banned-IP short-circuit + blocklist) still applies on every path. Exposed via `saveGlobalSettings(ignorePaths: [String!])`, the `ignorePaths` field on `bruteForceLoginProtectionGlobalSettings`, and a new textarea on the General settings tab. Entries are validated at save time (no control characters / CRLF, ≤ 512 chars).
 
 ## [3.1.1] — 2026-07-02
 

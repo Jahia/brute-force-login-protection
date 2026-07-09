@@ -134,6 +134,10 @@ public class SettingsService {
             }
             props.put(GlobalConfigHolder.CFG_IGNORE_PATTERNS, joinList(u.getIgnorePatterns()));
         }
+        if (u.getIgnorePaths() != null) {
+            validateIgnorePaths(u.getIgnorePaths());
+            props.put(GlobalConfigHolder.CFG_IGNORE_PATHS, joinList(u.getIgnorePaths()));
+        }
         if (u.getTrustProxyHeader() != null) {
             props.put(GlobalConfigHolder.CFG_TRUST_PROXY, String.valueOf(u.getTrustProxyHeader()));
         }
@@ -187,6 +191,36 @@ public class SettingsService {
                 new CidrMatcher(trimmed);
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("Invalid blocklist CIDR: " + AuditLogger.sanitize(trimmed));
+            }
+        }
+    }
+
+    // A single ignore-path entry is a literal URI substring; 512 chars is far beyond any real URL
+    // fragment and bounds the per-request contains() work on the auth hot path.
+    private static final int MAX_IGNORE_PATH_LENGTH = 512;
+
+    /**
+     * Validates each ignore-path entry (a literal URI substring matched by the auth valve). Rejects
+     * control characters / CRLF — which would corrupt the {@code .cfg} line and could be replayed
+     * into the audit log — and over-long entries. Blank entries are dropped by {@link #joinList} and
+     * are harmless. Unlike {@code ignorePatterns} these are NOT regexes, so no ReDoS check applies.
+     */
+    static void validateIgnorePaths(List<String> ignorePaths) {
+        if (ignorePaths == null) {
+            return;
+        }
+        for (String entry : ignorePaths) {
+            if (StringUtils.isBlank(entry)) {
+                continue;
+            }
+            if (entry.length() > MAX_IGNORE_PATH_LENGTH) {
+                throw new IllegalArgumentException("Ignore-path entry exceeds " + MAX_IGNORE_PATH_LENGTH + " characters");
+            }
+            for (int i = 0; i < entry.length(); i++) {
+                char c = entry.charAt(i);
+                if (c < 0x20 || c == 0x7F) {
+                    throw new IllegalArgumentException("Ignore-path entry contains control characters");
+                }
             }
         }
     }
