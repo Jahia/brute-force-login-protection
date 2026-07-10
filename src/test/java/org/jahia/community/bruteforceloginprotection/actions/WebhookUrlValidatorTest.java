@@ -90,6 +90,15 @@ public class WebhookUrlValidatorTest {
     }
 
     @Test
+    public void multicastAddressRejected() {
+        // F7 residual: no existing test rejects a multicast address (224.0.0.0/4, ff00::/8).
+        assertThatThrownBy(() -> WebhookUrlValidator.validateUrl("https://224.0.0.1/"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WebhookUrlValidator.validateUrl("https://[ff02::1]/"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     public void publicHttpsAddressAccepted() {
         InetAddress addr = WebhookUrlValidator.validateAndResolve("https://8.8.8.8/hook");
         assertThat(addr.getHostAddress()).isEqualTo("8.8.8.8");
