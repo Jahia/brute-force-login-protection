@@ -14,4 +14,23 @@
                           jcr:title="Brute Force Login Protection administrator"
                           jcr:description="Grants access to the Brute Force Login Protection administration without requiring full server administrator rights"/>
     </brute-force-login-protection-administrator>
+
+    <!--
+        SUPPORT-646 (F20/D2): a truly DECOUPLED role, granting ONLY bruteForceLoginProtectionAdmin
+        with no administrationAccess. The role above bundles both permissions together, so out of
+        the box an operator wanting fine-grained-only access must currently author this role
+        themselves (see D2). Shipping it directly closes that gap and, as a side effect, lets the
+        Cypress permission suite (02-bruteForceLoginProtection-Permissions.cy.ts) prove the
+        bruteForceLoginProtectionAdmin permission is independently sufficient at the GraphQL/UI
+        layer, not merely "declared independently" in the CND.
+    -->
+    <brute-force-login-protection-module-only jcr:primaryType="jnt:role"
+                                              j:nodeTypes="rep:root"
+                                              j:roleGroup="server-role"
+                                              j:permissionNames="bruteForceLoginProtectionAdmin">
+        <j:translation_en jcr:primaryType="jnt:translation"
+                          jcr:language="en"
+                          jcr:title="Brute Force Login Protection administrator (module permission only)"
+                          jcr:description="Grants ONLY the bruteForceLoginProtectionAdmin permission, decoupled from administrationAccess"/>
+    </brute-force-login-protection-module-only>
 </roles>

@@ -36,4 +36,21 @@ public class RolesXmlPermissionTest {
 
         assertThat(permissionNames).isEqualTo("administrationAccess bruteForceLoginProtectionAdmin");
     }
+
+    @Test
+    public void moduleOnlyRoleGrantsOnlyTheModulePermission() throws Exception {
+        File rolesXml = new File("src/main/import/roles.xml");
+
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        Document doc = factory.newDocumentBuilder().parse(rolesXml);
+
+        NodeList roleNodes = doc.getElementsByTagName("brute-force-login-protection-module-only");
+        assertThat(roleNodes.getLength())
+                .as("a decoupled role granting ONLY bruteForceLoginProtectionAdmin must be shipped")
+                .isEqualTo(1);
+
+        Element role = (Element) roleNodes.item(0);
+        assertThat(role.getAttribute("j:permissionNames")).isEqualTo("bruteForceLoginProtectionAdmin");
+    }
 }

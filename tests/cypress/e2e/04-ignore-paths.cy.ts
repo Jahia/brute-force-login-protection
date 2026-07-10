@@ -13,7 +13,6 @@ import { DocumentNode } from 'graphql'
  * Authorization header). We drive it with a bad HTTP Basic header, exactly like that incident.
  */
 describe('Brute Force Login Protection — ignore paths', () => {
-    const adminPath = '/jahia/administration/bruteForceLoginProtection'
     const apiPath = '/modules/graphql'
 
     /* eslint-disable @typescript-eslint/no-var-requires */
@@ -172,11 +171,12 @@ describe('Brute Force Login Protection — ignore paths', () => {
             })
         }
 
-        // The banned IP is rejected on a protected resource (401): the ban gate runs before the
-        // ignore-path check, so enforcement stays intact even with ignorePaths set.
+        // The banned IP is still rejected (401) specifically on the IGNORED path (apiPath) --
+        // this is the one thing this spec exists to prove: ignorePaths only exempts DETECTION,
+        // never ENFORCEMENT, even on the exact path that is configured as ignored.
         cy.request({
             method: 'GET',
-            url: adminPath,
+            url: apiPath,
             headers: { Authorization: badAuth },
             followRedirect: false,
             failOnStatusCode: false,
