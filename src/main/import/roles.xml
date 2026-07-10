@@ -23,11 +23,24 @@
         Cypress permission suite (02-bruteForceLoginProtection-Permissions.cy.ts) prove the
         bruteForceLoginProtectionAdmin permission is independently sufficient at the GraphQL/UI
         layer, not merely "declared independently" in the CND.
+
+        SUPPORT-646 (Stage 7 bugfix): j:privilegedAccess="true" is REQUIRED here, matching the
+        role above. Without it, Jahia's org.jahia.services.content.AclListener never adds a user
+        granted this role to the site's "privileged" group (see AclListener.handleAclModifications
+        / the post-ACE-save privileged-membership recompute, both of which gate solely on
+        roleNode.getProperty("j:privilegedAccess")). That group membership is what the admin
+        console shell (/jahia/administration/*) and the GraphQL admin API gate access on before
+        any bruteForceLoginProtectionAdmin-specific check is even reached, which is exactly why a
+        user granted ONLY this role (previously missing this attribute) was denied with
+        GqlAccessDeniedException / HTTP 403 even though bruteForceLoginProtectionAdmin was
+        correctly granted. This was the real root cause of the bug, not the permissions.xml
+        nesting (see permissions.xml, which was also hardened as defense-in-depth).
     -->
     <brute-force-login-protection-module-only jcr:primaryType="jnt:role"
                                               j:nodeTypes="rep:root"
                                               j:roleGroup="server-role"
-                                              j:permissionNames="bruteForceLoginProtectionAdmin">
+                                              j:permissionNames="bruteForceLoginProtectionAdmin"
+                                              j:privilegedAccess="true">
         <j:translation_en jcr:primaryType="jnt:translation"
                           jcr:language="en"
                           jcr:title="Brute Force Login Protection administrator (module permission only)"
