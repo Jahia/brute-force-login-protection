@@ -54,8 +54,10 @@ public class TorExitNodeFetcher {
 
     private static final long TICK_SECONDS = 60L;
     private static final long INITIAL_DELAY_SECONDS = 10L;
-    private static final int CONNECT_TIMEOUT_MS = 10_000;
-    private static final int READ_TIMEOUT_MS = 30_000;
+    // Package-private (not private) so U10's regression test can assert the exact configured
+    // values without needing a slow, real-time timeout race (behavior-preserving visibility change).
+    static final int CONNECT_TIMEOUT_MS = 10_000;
+    static final int READ_TIMEOUT_MS = 30_000;
     // The real list is ~300 KB; anything near this cap is not the exit-address list.
     static final long MAX_RESPONSE_BYTES = 5L * 1024 * 1024;
     private static final String EXIT_ADDRESS_PREFIX = "ExitAddress ";
