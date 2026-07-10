@@ -9,10 +9,14 @@ import org.mockito.junit.MockitoJUnitRunner;
 import org.osgi.framework.BundleContext;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,6 +50,15 @@ public class HazelcastInstanceManagerShutdownTest {
         ((AtomicReference<HazelcastInstance>) f.get(manager)).set(hz);
     }
 
+    /** F24 residual: existing tests only ever inject the {@code hazelcastInstance} field, leaving
+     * the private {@code scheduler} field null so destroy()'s scheduler-teardown branch is never
+     * reached. Inject a spy scheduler too so that branch actually executes. */
+    private static void injectScheduler(HazelcastInstanceManager manager, ScheduledExecutorService scheduler) throws Exception {
+        Field f = HazelcastInstanceManager.class.getDeclaredField("scheduler");
+        f.setAccessible(true);
+        f.set(manager, scheduler);
+    }
+
     @Test
     public void destroy_terminatesInsteadOfGracefulShutdown() throws Exception {
         HazelcastInstanceManager manager = new HazelcastInstanceManager();
@@ -73,5 +86,45 @@ public class HazelcastInstanceManagerShutdownTest {
 
         assertThatCode(() -> manager.destroy(bundleContext)).doesNotThrowAnyException();
         assertThat(manager.getHazelcastInstance()).isNull();
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F24 residual — the discovery scheduler is shut down and awaited BEFORE the Hazelcast
+    // instance is torn down (previously untested: no existing test injected a non-null scheduler).
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void destroy_shutsDownAndAwaitsDiscoveryScheduler_beforeTerminatingInstance() throws Exception {
+        HazelcastInstanceManager manager = new HazelcastInstanceManager();
+        injectInstance(manager, hz);
+        when(hz.getLifecycleService()).thenReturn(lifecycleService);
+        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
+        when(scheduler.awaitTermination(anyLong(), org.mockito.ArgumentMatchers.any(TimeUnit.class))).thenReturn(true);
+        injectScheduler(manager, scheduler);
+
+        manager.destroy(bundleContext);
+
+        verify(scheduler).shutdownNow();
+        verify(scheduler).awaitTermination(5L, TimeUnit.SECONDS);
+        verify(lifecycleService).terminate();
+        // scheduler field must be cleared so a later reactivation starts fresh.
+        Field f = HazelcastInstanceManager.class.getDeclaredField("scheduler");
+        f.setAccessible(true);
+        assertThat(f.get(manager)).isNull();
+    }
+
+    @Test
+    public void destroy_schedulerAwaitTimeout_stillTerminatesInstance() throws Exception {
+        HazelcastInstanceManager manager = new HazelcastInstanceManager();
+        injectInstance(manager, hz);
+        when(hz.getLifecycleService()).thenReturn(lifecycleService);
+        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
+        when(scheduler.awaitTermination(anyLong(), org.mockito.ArgumentMatchers.any(TimeUnit.class))).thenReturn(false);
+        injectScheduler(manager, scheduler);
+
+        assertThatCode(() -> manager.destroy(bundleContext)).doesNotThrowAnyException();
+
+        verify(scheduler).shutdownNow();
+        verify(lifecycleService).terminate();
     }
 }
