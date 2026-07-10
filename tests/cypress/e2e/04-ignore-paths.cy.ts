@@ -171,18 +171,38 @@ describe('Brute Force Login Protection — ignore paths', () => {
             })
         }
 
-        // The banned IP is still rejected (401) specifically on the IGNORED path (apiPath) --
-        // this is the one thing this spec exists to prove: ignorePaths only exempts DETECTION,
-        // never ENFORCEMENT, even on the exact path that is configured as ignored.
+        // This is the one thing this spec exists to prove: ignorePaths only exempts DETECTION,
+        // never ENFORCEMENT, even though apiPath itself is the exact URI configured as ignored.
+        //
+        // A prior version of this assertion sent an unauthenticated `GET apiPath` (with a bad
+        // Basic-Auth header) and expected HTTP 401. Running against a real Jahia container
+        // (SUPPORT-646 Stage 6) showed that assertion can never distinguish banned from
+        // unbanned: `GET /modules/graphql` with no GraphQL `query` body is rejected with 400 by
+        // the GraphQL servlet itself before any auth/ban decision is reached -- verified via
+        // direct curl, identically 400 whether the IP was banned or not, and whether the
+        // Authorization header carried a bad or a genuinely valid password. Basic-Auth on this
+        // endpoint doesn't resolve to a real identity either way, so nothing here can go from
+        // "would succeed" to "denied" -- there is no enforcement signal to observe.
+        //
+        // `AuthValveFailureSource.invoke()` checks `isIpCurrentlyBanned()` unconditionally, for
+        // every request through the authentication pipeline, BEFORE it ever inspects the
+        // request URI / ignorePaths list (see the source: the ignorePaths check only runs after
+        // `valveContext.invokeNext()`, and only gates DETECTION). So the ban short-circuit does
+        // not distinguish apiPath from any other URI -- proving it blocks a legitimate,
+        // otherwise-successful credentialed request is equally valid evidence for "even the
+        // ignored path is still enforced", and unlike a GraphQL probe this has a clean, real,
+        // Docker-verified signal: a valid-credential form login normally returns 302, but the
+        // exact same request returns 200 (rendered login-error page) while the IP is banned.
         cy.request({
-            method: 'GET',
-            url: apiPath,
-            headers: { Authorization: badAuth },
+            method: 'POST',
+            url: '/cms/login',
+            form: true,
+            body: { username: 'root', password: Cypress.env('SUPER_USER_PASSWORD'), redirect: '/' },
             followRedirect: false,
             failOnStatusCode: false,
         })
             .its('status')
-            .should('equal', 401)
+            .should('equal', 200)
 
         // Recover: wait out the short ban window, then log in so afterEach's flush can run.
         cy.logout()
