@@ -170,7 +170,9 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
-    private static void reconcileBansInSession(JCRSessionWrapper session, IMap<String, BannedIp> bans)
+    /** Package-private (rather than private) so it is directly unit-testable without needing a
+     * full component activation cycle or reflection — behavior is otherwise unchanged (F10). */
+    static void reconcileBansInSession(JCRSessionWrapper session, IMap<String, BannedIp> bans)
             throws RepositoryException {
         if (!session.nodeExists(BANS_NODE_PATH)) {
             return;

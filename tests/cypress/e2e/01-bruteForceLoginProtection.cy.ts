@@ -120,6 +120,32 @@ describe('Brute Force Login Protection', () => {
                 expect(found, 'jail "test" must exist').to.exist;
                 expect(found.maxRetry).to.eq(3);
             });
+
+        // F2-b residual: a genuine UPDATE of the SAME jail (not just create-then-read) — a second
+        // saveJail call changes maxRetry/findTimeSeconds/banTimeSeconds and must be reflected on
+        // read-back, proving the update-of-an-existing-jail path (not just first-time creation).
+        cy.apollo({
+            mutation: saveJail,
+            variables: {
+                name: 'test',
+                enabled: true,
+                maxRetry: 9,
+                findTimeSeconds: 120,
+                banTimeSeconds: 300
+            }
+        })
+            .its('data.bruteForceLoginProtection.saveJail')
+            .should('eq', true);
+
+        cy.apollo({query: getJails})
+            .its('data.bruteForceLoginProtection.jails')
+            .should((jails: Array<{name: string; maxRetry: number; findTimeSeconds: number; banTimeSeconds: number}>) => {
+                const updated = jails.find(j => j.name === 'test');
+                expect(updated, 'jail "test" must still exist after update').to.exist;
+                expect(updated.maxRetry, 'maxRetry must reflect the second saveJail call').to.eq(9);
+                expect(updated.findTimeSeconds, 'findTimeSeconds must reflect the second saveJail call').to.eq(120);
+                expect(updated.banTimeSeconds, 'banTimeSeconds must reflect the second saveJail call').to.eq(300);
+            });
     });
 
     it('deletes a jail', () => {
@@ -192,12 +218,25 @@ describe('Brute Force Login Protection', () => {
             });
     });
 
+    // NOTE (SUPPORT-646, F3-b): "persistent bans survive a real cluster restart" is NOT automated
+    // anywhere in this suite. The docker-compose harness here is single-node with no built-in
+    // container-restart hook, so orchestrating a real Jahia restart from a Cypress spec would need
+    // new container-lifecycle tooling (e.g. a custom Cypress task shelling out to
+    // `docker compose restart` plus a wait-for-health-check loop) -- out of scope for this
+    // initiative. The startup ban-reconciliation LOGIC that would run after such a restart
+    // (BruteForceTracker.reconcileBansInSession: stale JCR ban removed, live ban restored into
+    // Hazelcast with a derived TTL) is unit-tested directly in
+    // BruteForceTrackerReconciliationTest (src/test/java/.../core/). The true end-to-end
+    // multi-node restart scenario remains a manual/QA checklist item, not automated here.
     it('returns cluster status with hazelcast running', () => {
         cy.apollo({query: getClusterStatus})
             .its('data.bruteForceLoginProtection.clusterStatus')
             .should(status => {
                 expect(status.hazelcastRunning).to.eq(true);
-                expect(status.nodeCount).to.be.greaterThan(0);
+                // F8-b residual: the docker-compose harness runs a single Jahia node (a "cluster of
+                // one", per AGENTS.md's "Gotchas" section), so the exact expected node count is 1,
+                // not just "> 0".
+                expect(status.nodeCount).to.eq(1);
             });
     });
 
@@ -429,6 +468,17 @@ describe('Brute Force Login Protection', () => {
         cy.contains(/Jails/i).should('be.visible');
         cy.contains(/Bans/i).should('be.visible');
         cy.contains(/Audit log/i).should('be.visible');
+        // F21 residual: the Integrations tab was previously asserted nowhere (only mentioned in a
+        // source comment) -- assert it actually renders, alongside the Blocklist tab (asserted
+        // separately in 03-blocklist.cy.ts), for the real "6 tabs total" claim.
+        cy.contains(/Integrations/i).should('be.visible');
+    });
+
+    it('shows the Integrations tab content when selected', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains(/Integrations/i).click();
+        cy.contains(/Integrations/i).should('be.visible');
     });
 
     it('shows the Save button in the General tab', () => {

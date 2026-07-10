@@ -48,7 +48,7 @@ public class EmailBanAction implements BanAction {
         }
         MailService mailService;
         try {
-            mailService = MailService.getInstance();
+            mailService = resolveMailService();
         } catch (Exception t) {
             LOGGER.debug("BFLP: MailService unavailable: {}", t.getMessage());
             return;
@@ -86,7 +86,7 @@ public class EmailBanAction implements BanAction {
         GlobalSettings settings = settingsService.getGlobalSettings();
         MailService mailService;
         try {
-            mailService = MailService.getInstance();
+            mailService = resolveMailService();
         } catch (Exception t) {
             return IntegrationTestResult.fail("MailService unavailable: " + t.getMessage());
         }
@@ -112,6 +112,13 @@ public class EmailBanAction implements BanAction {
             LOGGER.warn("BFLP: test email failed: {}", e.getMessage());
             return IntegrationTestResult.fail("Send failed: " + e.getMessage());
         }
+    }
+
+    /** Package-private seam (behavior-preserving) so tests can substitute a mock
+     * {@link MailService} without needing to intercept the static {@code MailService.getInstance()}
+     * factory method (Mockito's default mock maker cannot mock static methods). */
+    MailService resolveMailService() {
+        return MailService.getInstance();
     }
 
     private boolean throttle(String ip) {

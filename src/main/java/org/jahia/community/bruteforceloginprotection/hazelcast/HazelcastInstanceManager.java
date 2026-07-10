@@ -222,19 +222,10 @@ public class HazelcastInstanceManager implements Runnable {
         ensureClusterPassword(path.getParent());
 
         String basePortStr = System.getProperty(HazelcastConf.BASE_BIND_PORT_PROPERTY);
-        if (StringUtils.isNotBlank(basePortStr)) {
-            try {
-                System.setProperty(HazelcastConf.BIND_PORT_PROPERTY, Integer.toString(Integer.parseInt(basePortStr) + 2));
-            } catch (NumberFormatException e) {
-                logger.warn("BFLP: invalid {}={}, falling back to default", HazelcastConf.BASE_BIND_PORT_PROPERTY, basePortStr);
-                System.setProperty(HazelcastConf.BIND_PORT_PROPERTY, "5703");
-            }
-        } else if (System.getProperty(HazelcastConf.BIND_PORT_PROPERTY) == null) {
-            System.setProperty(HazelcastConf.BIND_PORT_PROPERTY, "5703");
-        }
-        if (System.getProperty("cluster.tcp.bindAddress") == null) {
-            System.setProperty("cluster.tcp.bindAddress", "127.0.0.1");
-        }
+        System.setProperty(HazelcastConf.BIND_PORT_PROPERTY,
+                derivedBindPortProperty(basePortStr, System.getProperty(HazelcastConf.BIND_PORT_PROPERTY)));
+        System.setProperty("cluster.tcp.bindAddress",
+                derivedBindAddress(System.getProperty("cluster.tcp.bindAddress")));
 
         Config config;
         try {
@@ -255,6 +246,37 @@ public class HazelcastInstanceManager implements Runnable {
         String serverId = System.getProperty("cluster.node.serverId", "single");
         config.setInstanceName(HazelcastConf.INSTANCE_NAME_PREFIX + serverId);
         return config;
+    }
+
+    static final String DEFAULT_BIND_PORT = "5703";
+    static final String DEFAULT_BIND_ADDRESS = "127.0.0.1";
+
+    /**
+     * Derives the value to set for {@link HazelcastConf#BIND_PORT_PROPERTY}: base-port + 2 when a
+     * valid {@code cluster.hazelcast.bindPort} system property is present, falling back to the
+     * already-set bind-port property (if any) or {@link #DEFAULT_BIND_PORT} otherwise. Extracted
+     * as a package-private static method (behavior-preserving) so the port-derivation math is
+     * directly unit-testable without a real Hazelcast XML file or {@code BundleContext}.
+     */
+    static String derivedBindPortProperty(String basePortStr, String existingBindPortProperty) {
+        if (StringUtils.isNotBlank(basePortStr)) {
+            try {
+                return Integer.toString(Integer.parseInt(basePortStr.trim()) + 2);
+            } catch (NumberFormatException e) {
+                logger.warn("BFLP: invalid {}={}, falling back to default", HazelcastConf.BASE_BIND_PORT_PROPERTY, basePortStr);
+                return DEFAULT_BIND_PORT;
+            }
+        }
+        return existingBindPortProperty != null ? existingBindPortProperty : DEFAULT_BIND_PORT;
+    }
+
+    /**
+     * Derives the value to set for {@code cluster.tcp.bindAddress}: the already-set value if any,
+     * otherwise {@link #DEFAULT_BIND_ADDRESS} (loopback). Extracted as a package-private static
+     * method (behavior-preserving) so U9's defaulting behavior is directly unit-testable.
+     */
+    static String derivedBindAddress(String existingBindAddress) {
+        return StringUtils.isNotBlank(existingBindAddress) ? existingBindAddress : DEFAULT_BIND_ADDRESS;
     }
 
     /**

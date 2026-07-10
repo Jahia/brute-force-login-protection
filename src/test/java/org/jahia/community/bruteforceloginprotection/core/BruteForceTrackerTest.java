@@ -12,9 +12,12 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
+import javax.jcr.RepositoryException;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -145,12 +148,16 @@ public class BruteForceTrackerTest {
     }
 
     private FailureEvent failureFor(String ip) {
+        return failureFor(ip, "alice");
+    }
+
+    private FailureEvent failureFor(String ip, String username) {
         return FailureEvent.builder()
                 .ip(ip)
                 .sourceName("test-source")
                 .jailName("login")
                 .timestampMs(System.currentTimeMillis())
-                .username("alice")
+                .username(username)
                 .userAgent("agent")
                 .requestPath("/cms/login")
                 .extras(new HashMap<>())
@@ -346,4 +353,136 @@ public class BruteForceTrackerTest {
         tracker.removeBanAction(low);
         assertThat(tracker.getBanActions()).hasSize(1);
     }
+
+    // -------------------------------------------------------------------------------------------
+    // F6-a (downgraded, full rewrite) — 3 out-of-order BanActions, real threshold-crossing ban,
+    // assert BOTH sort order AND all three onBan() invocations together (the previously-existing
+    // tests each asserted only one half of this compound claim).
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void threeOutOfOrderBanActionsAreAllDispatchedAndSortedOnRealBan() {
+        when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
+        when(settingsService.getJail("login")).thenReturn(loginJail(1, 60L, 60L));
+
+        BanAction actionPriority20 = mock(BanAction.class);
+        when(actionPriority20.priority()).thenReturn(20);
+        when(actionPriority20.getName()).thenReturn("p20");
+        BanAction actionPriority0 = mock(BanAction.class);
+        when(actionPriority0.priority()).thenReturn(0);
+        when(actionPriority0.getName()).thenReturn("p0");
+        BanAction actionPriority10 = mock(BanAction.class);
+        when(actionPriority10.priority()).thenReturn(10);
+        when(actionPriority10.getName()).thenReturn("p10");
+
+        // Registered out of priority order on purpose.
+        tracker.addBanAction(actionPriority20);
+        tracker.addBanAction(actionPriority0);
+        tracker.addBanAction(actionPriority10);
+
+        // Single event crosses maxRetry=1, triggering a real ban via recordEvent -> doBan.
+        tracker.recordEvent(failureFor("10.0.0.50"));
+
+        assertThat(bansStore).containsKey("10.0.0.50");
+
+        List<BanAction> sorted = tracker.getBanActions();
+        assertThat(sorted).extracting(BanAction::getName).containsExactly("p0", "p10", "p20");
+
+        verify(actionPriority20, times(1)).onBan(any(BanContext.class));
+        verify(actionPriority0, times(1)).onBan(any(BanContext.class));
+        verify(actionPriority10, times(1)).onBan(any(BanContext.class));
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F26 — Known limitation: IP-keyed counting only. Two different usernames from the same IP
+    // land in the SAME sliding-window entry and jointly count toward the same threshold.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void differentUsernamesFromSameIpShareTheSameFailureWindow() {
+        when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
+        when(settingsService.getJail("login")).thenReturn(loginJail(2, 60L, 60L));
+
+        tracker.recordEvent(failureFor("10.0.0.60", "alice"));
+        tracker.recordEvent(failureFor("10.0.0.60", "bob"));
+
+        // Both events (different usernames, same IP) jointly crossed maxRetry=2 -> banned.
+        assertThat(bansStore).containsKey("10.0.0.60");
+        assertThat(windowsStore).doesNotContainKey("10.0.0.60|login");
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F27 — Known limitation: dual source of truth. A JCR mirror-write failure must not roll
+    // back (or prevent) the Hazelcast ban — the module intentionally favors availability of the
+    // enforcement path over mirror consistency.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void jcrMirrorWriteFailureDoesNotRollBackHazelcastBan() throws Exception {
+        when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
+        when(settingsService.getJail(anyString())).thenReturn(loginJail(3, 60L, 60L));
+
+        // First invocation = readBanCountFromJcr (succeeds, returns 0); second invocation =
+        // mirrorBanToJcr's callback (simulated JCR mirror-write failure).
+        when(jcrTemplate.doExecuteWithSystemSessionAsUser(any(), anyString(), any(), any(JCRCallback.class)))
+                .thenReturn(0)
+                .thenThrow(new RepositoryException("simulated JCR mirror write failure"));
+
+        boolean result = tracker.banManually("10.0.0.70", "login", 120, "jcr-failure-test");
+
+        assertThat(result).isTrue();
+        assertThat(bansStore).containsKey("10.0.0.70");
+        assertThat(tracker.isIpCurrentlyBanned("10.0.0.70")).isTrue();
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F17-a residual — manual-ban duration is clamped to maxBanTimeSeconds.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void banManuallyClampsDurationToMaxBanTimeSeconds() {
+        GlobalSettings clampedSettings = GlobalSettings.builder()
+                .activated(true)
+                .whitelistIps("")
+                .ignorePatterns(Collections.emptyList())
+                .auditLogMaxEntries(1000)
+                .recidiveFactor(2.0)
+                .maxBanTimeSec(100L)
+                .build();
+        when(settingsService.getGlobalSettings()).thenReturn(clampedSettings);
+        when(settingsService.getJail("login")).thenReturn(loginJail(3, 60L, 60L));
+
+        long before = System.currentTimeMillis();
+        assertThat(tracker.banManually("10.0.0.80", "login", 100_000, "too long")).isTrue();
+
+        BannedIp banned = bansStore.get("10.0.0.80");
+        assertThat(banned).isNotNull();
+        // Clamped to maxBanTimeSec=100s, NOT the requested 100_000s.
+        assertThat(banned.getBannedUntil()).isLessThanOrEqualTo(before + 101_000L);
+        assertThat(banned.getBannedUntil()).isGreaterThan(before + 99_000L);
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F11 residual — getHazelcastInstance() itself returning null (distinct from "not running").
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void isIpCurrentlyBannedFailsOpenWhenHazelcastInstanceIsNull() {
+        when(hazelcastManager.getHazelcastInstance()).thenReturn(null);
+        assertThat(tracker.isIpCurrentlyBanned("6.6.6.6")).isFalse();
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // F14 residual — a genuine (not mocked) ReDoS-timeout race. Attempted with a real
+    // tracker.activate() (wiring up the actual bounded ExecutorService) against the classic
+    // "^(a+)+$" catastrophic-backtracking pattern: empirically, on this JDK/hardware combination
+    // a 40-character adversarial input still resolved to NOT_MATCHED well within the 50ms
+    // executor timeout (no real blow-up observed), and reliably forcing a genuine multi-second
+    // backtrack without either (a) a very long, slow input or (b) JVM-specific tuning would make
+    // this test slow and/or flaky in CI. Per the gap list's own explicit trade-off note, this is
+    // "deliberately last/optional" -- the existing mocked-Future test
+    // (RegexSafetyCheckTest / BruteForceTrackerIgnorePatternTest's ReDoS-fail-closed case) is
+    // accepted as sufficient coverage of the fail-closed *consequence*, and a real-timeout race is
+    // intentionally NOT added here to avoid flakiness.
+    // -------------------------------------------------------------------------------------------
 }

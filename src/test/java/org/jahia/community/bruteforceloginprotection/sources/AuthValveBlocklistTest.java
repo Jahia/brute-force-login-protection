@@ -108,4 +108,30 @@ public class AuthValveBlocklistTest {
         verify(valveContext, never()).invokeNext(any());
         verify(blocklistService, never()).getBlockReason(any());
     }
+
+    // -------------------------------------------------------------------------------------------
+    // F19 residual — retrieveRemoteAddress() falls back to the raw socket address (rather than
+    // trusting the X-Forwarded-For header) when trustProxyHeader=true but trustedProxyCidrs is
+    // empty, since no proxy hop can be verified as trusted.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void retrieveRemoteAddress_fallsBackToSocketAddress_whenTrustedProxyCidrsEmpty() throws PipelineException {
+        when(settingsService.getGlobalSettings()).thenReturn(GlobalSettings.builder()
+                .activated(true)
+                .whitelistIps("")
+                .ignorePatterns(Collections.emptyList())
+                .trustProxyHeader(true)
+                .trustedProxyCidrs(Collections.emptyList())
+                .build());
+        // Deliberately never consumed: an empty trustedProxyCidrs means the header is never even
+        // read (see retrieveRemoteAddress()'s early-return) -- this stub is the negative proof.
+        lenient().when(request.getHeader("x-forwarded-for")).thenReturn("6.6.6.6");
+
+        valve.invoke(authContext, valveContext);
+
+        // Must have consulted the ban check with the RAW socket address, not the spoofable header.
+        verify(failureRecorder).isIpCurrentlyBanned("203.0.113.42");
+        verify(failureRecorder, never()).isIpCurrentlyBanned("6.6.6.6");
+    }
 }

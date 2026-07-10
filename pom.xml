@@ -167,12 +167,12 @@
             </goals>
           </execution>
           <!--
-            Gate: LINE coverage minimum 0.30 (current measured floor ~32.7%).
-            Set just below the measured value to act as a regression ratchet, not to break
-            the build. NOTE: 0.80 is the long-term target per §6 of the review; the bulk of
-            the remaining lines are JCR/OSGi/Hazelcast paths that require a live Jahia
-            runtime (covered by the Cypress E2E suite, not unit tests). Raise this gate
-            incrementally as more unit-testable paths are added.
+            Gate: LINE coverage minimum, ratcheted up incrementally as the SUPPORT-646 test-
+            coverage initiative lands (0.30 -> 0.40 after Group 1 -> 0.55 after Groups 2-3 ->
+            0.70 after Group 4 -> 0.80 after Group 5). NOTE: 0.80 is the long-term target per
+            §6 of the review; the bulk of the remaining lines are JCR/OSGi/Hazelcast paths that
+            require a live Jahia runtime (covered by the Cypress E2E suite, not unit tests).
+            Each step is verified against a real `mvn test` run before being raised further.
           -->
           <execution>
             <id>jacoco-check</id>
@@ -187,7 +187,7 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.30</minimum>
+                      <minimum>0.64</minimum>
                     </limit>
                   </limits>
                 </rule>

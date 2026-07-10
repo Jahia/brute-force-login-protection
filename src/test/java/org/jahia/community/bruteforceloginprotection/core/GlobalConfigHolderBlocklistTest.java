@@ -91,4 +91,31 @@ public class GlobalConfigHolderBlocklistTest {
 
         assertThat(s.getTorBlocklistRefreshSeconds()).isEqualTo(DEFAULT_TOR_REFRESH_SEC);
     }
+
+    // -------------------------------------------------------------------------------------------
+    // F25 — v2.x -> v3.0.0 breaking migration: legacy JCR property names are silently ignored,
+    // never read, by the current OSGi-config-based parser. Regression guard against a future
+    // refactor accidentally reintroducing a v2-key read path (no automatic migration by design).
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void fromDictionary_legacyV2KeysAreIgnored_fallBackToDefaults() {
+        Dictionary<String, Object> d = new Hashtable<>();
+        // Legacy v2.x keys -- none of the current GlobalConfigHolder.CFG_* names.
+        d.put("nb_failed_login_max", "3");
+        d.put("time_to_idle", "600");
+
+        GlobalSettings s = GlobalConfigHolder.fromDictionary(d);
+        GlobalSettings defaults = GlobalConfigHolder.defaults();
+
+        // Every field falls back to its documented default, exactly as if the dictionary had been
+        // empty -- the legacy keys are never read.
+        assertThat(s.isActivated()).isEqualTo(defaults.isActivated());
+        assertThat(s.getWhitelistIps()).isEqualTo(defaults.getWhitelistIps());
+        assertThat(s.getAuditLogMaxEntries()).isEqualTo(defaults.getAuditLogMaxEntries());
+        assertThat(s.getRecidiveFactor()).isEqualTo(defaults.getRecidiveFactor());
+        assertThat(s.getMaxBanTimeSec()).isEqualTo(defaults.getMaxBanTimeSec());
+        assertThat(s.isTorBlocklistEnabled()).isEqualTo(defaults.isTorBlocklistEnabled());
+        assertThat(s.getTorBlocklistUrl()).isEqualTo(defaults.getTorBlocklistUrl());
+    }
 }

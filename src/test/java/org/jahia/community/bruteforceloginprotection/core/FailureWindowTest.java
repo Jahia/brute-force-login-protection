@@ -88,4 +88,31 @@ public class FailureWindowTest {
         assertThat(copy.oldest()).isEqualTo(11L);
         assertThat(copy.newest()).isEqualTo(33L);
     }
+
+    // -------------------------------------------------------------------------------------------
+    // F1 residual — serialize/deserialize AFTER prune() (the round-trip above serializes
+    // un-pruned raw state; this covers the specific claim that pruned state survives the
+    // round-trip, not merely raw state).
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void serializationRoundTripAfterPrunePreservesPrunedState() throws Exception {
+        FailureWindow w = new FailureWindow("1.2.3.4", "login");
+        w.add(100L);
+        w.add(200L);
+        w.add(300L);
+        w.prune(250L); // evicts 100L and 200L, leaving only 300L
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(w);
+        }
+        FailureWindow copy;
+        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray()))) {
+            copy = (FailureWindow) ois.readObject();
+        }
+        assertThat(copy.size()).isEqualTo(1);
+        assertThat(copy.oldest()).isEqualTo(300L);
+        assertThat(copy.newest()).isEqualTo(300L);
+    }
 }

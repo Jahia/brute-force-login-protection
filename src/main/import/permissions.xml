@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    SUPPORT-646 (Stage 7 bugfix): bruteForceLoginProtectionAdmin is declared as a TOP-LEVEL
+    permission node (sibling of the shared "admin" category), NOT nested under <admin>.
+
+    Investigation note (see 07-bugfix-report.md for full evidence): the ACTUAL confirmed root
+    cause of the "module-only role denied" bug turned out to be a MISSING j:privilegedAccess="true"
+    on the role in roles.xml (see that file), not this nesting. Reading Jahia's own privilege
+    registration code (JahiaPrivilegeRegistry.registerPrivileges) shows a nested jnt:permission
+    node is still registered as its own independent, standalone JCR privilege keyed by its own
+    local name, so nesting under <admin> does not, by itself, block standalone grantability.
+
+    This restructuring to a top-level node is kept anyway as defense-in-depth / cleaner
+    module ownership: the pre-existing <admin> node in this file is Jahia core's own shared
+    "server settings" permission-category node (see WEB-INF/etc/repository/root-permissions.xml
+    in jahia-war), reused (not duplicated) by JCR import because it already exists at that path.
+    Nesting our own custom permission inside a node core Jahia and other modules also own is
+    unnecessary coupling for a module-owned permission that has no real parent/child relationship
+    with "admin" — hoisting it to the top level removes that shared-ownership risk even though it
+    was not the cause of the bug fixed in roles.xml.
+-->
 <permissions xmlns:jcr="http://www.jcp.org/jcr/1.0">
-    <admin jcr:primaryType="jnt:permission">
-        <bruteForceLoginProtectionAdmin jcr:primaryType="jnt:permission"/>
-    </admin>
+    <bruteForceLoginProtectionAdmin jcr:primaryType="jnt:permission"/>
 </permissions>
