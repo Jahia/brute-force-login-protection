@@ -129,11 +129,19 @@ describe('Brute Force Login Protection — permission enforcement', () => {
             cy.contains('button', /Flush all/i).should('be.visible')
         })
 
-        // F20 residual: same UI-level proof, but with administrationAccess entirely absent.
-        it('shows the admin panel to a user granted ONLY bruteForceLoginProtectionAdmin (no administrationAccess)', () => {
-            cy.login(MODULE_ONLY_USER, PASSWORD)
-            cy.visit(ADMIN_PATH)
-            cy.contains('button', /Flush all/i).should('be.visible')
-        })
+        // SUPPORT-646 correction: an earlier version of this file had an F20-residual test here
+        // asserting that MODULE_ONLY_USER (bruteForceLoginProtectionAdmin only, no
+        // administrationAccess) could see the admin panel. That assertion was wrong and has been
+        // removed. register.jsx registers this module's admin route under
+        // `targets: ['administration-server-configuration:10']` — a sub-entry of Jahia's core
+        // "Server Configuration" admin-console section, which itself requires
+        // administrationAccess to navigate into at all. requiredPermission:
+        // 'bruteForceLoginProtectionAdmin' only gates this module's own sub-page content once
+        // inside that section; it was never meant to (and cannot) grant access to the section
+        // itself. The GraphQL API decoupling proven above (`allows the gated query for a user
+        // granted ONLY bruteForceLoginProtectionAdmin`) is the real, correct scope of the
+        // decoupled module-only role; the admin UI is intentionally not decoupled from
+        // administrationAccess, by Jahia's own admin-console architecture, not a bug in this
+        // module.
     })
 })
