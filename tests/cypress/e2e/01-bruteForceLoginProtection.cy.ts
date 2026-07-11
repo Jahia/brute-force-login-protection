@@ -246,11 +246,19 @@ describe('Brute Force Login Protection', () => {
         cy.apollo({mutation: flush});
 
         // Activate protection + tighten the "login" jail so the test runs quickly
+        //
+        // ignorePaths is explicitly reset here: saveGlobalSettings is a PARTIAL UPDATE
+        // (SettingsService.applySimpleGlobalUpdate only overwrites a field when the
+        // corresponding argument is non-null), so any field omitted from this call would
+        // silently keep whatever was last persisted by ANY earlier test/spec run rather than
+        // reverting to a clean default. Being explicit here keeps this test deterministic and
+        // order-independent regardless of what ran before it.
         cy.apollo({
             mutation: saveGlobalSettings,
             variables: {
                 activated: true,
                 whitelistIps: '',
+                ignorePaths: [],
                 recidiveFactor: 1.0,
                 maxBanTimeSeconds: 60
             }
@@ -314,11 +322,15 @@ describe('Brute Force Login Protection', () => {
 
         cy.apollo({mutation: flush});
 
+        // ignorePaths reset explicitly for the same reason as the login-blocking test above:
+        // saveGlobalSettings only PARTIALLY updates config, so an omitted field would inherit
+        // whatever a previous test/spec left persisted.
         cy.apollo({
             mutation: saveGlobalSettings,
             variables: {
                 activated: true,
                 whitelistIps: '',
+                ignorePaths: [],
                 recidiveFactor: 1.0,
                 maxBanTimeSeconds: 60
             }
@@ -386,11 +398,22 @@ describe('Brute Force Login Protection', () => {
 
         cy.apollo({mutation: flush});
 
+        // ignorePaths MUST be reset to [] explicitly here. saveGlobalSettings is a PARTIAL
+        // UPDATE (SettingsService.applySimpleGlobalUpdate only overwrites ignorePaths
+        // `if (u.getIgnorePaths() != null)`), so any argument omitted from this call is left
+        // completely unchanged from whatever was last persisted -- including by
+        // 04-ignore-paths.cy.ts, which sets ignorePaths to include this very test's target path
+        // (`/modules/graphql`, aliased there as `apiPath`) and never resets it back to empty.
+        // Without this explicit reset, if 04 ran before this spec, the bad-token requests below
+        // would land on a path that is silently exempt from failure DETECTION, no ban would ever
+        // fire, and the `expect(bans.length).to.be.greaterThan(0)` assertion further down would
+        // fail -- this is not hypothetical, it was reproduced live against a real container.
         cy.apollo({
             mutation: saveGlobalSettings,
             variables: {
                 activated: true,
                 whitelistIps: '',
+                ignorePaths: [],
                 recidiveFactor: 1.0,
                 maxBanTimeSeconds: 60
             }
