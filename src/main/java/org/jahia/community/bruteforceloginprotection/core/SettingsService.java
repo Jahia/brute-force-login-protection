@@ -19,9 +19,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Dictionary;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.jahia.community.bruteforceloginprotection.BruteForceLoginProtectionConstants.*;
@@ -127,11 +129,7 @@ public class SettingsService {
             props.put(GlobalConfigHolder.CFG_WHITELIST, u.getWhitelistIps());
         }
         if (u.getIgnorePatterns() != null) {
-            for (String p : u.getIgnorePatterns()) {
-                if (StringUtils.isNotBlank(p)) {
-                    RegexSafetyCheck.assertSafe(p);
-                }
-            }
+            assertNewIgnorePatternsSafe(props, u.getIgnorePatterns());
             props.put(GlobalConfigHolder.CFG_IGNORE_PATTERNS, joinList(u.getIgnorePatterns()));
         }
         if (u.getIgnorePaths() != null) {
@@ -343,6 +341,34 @@ public class SettingsService {
 
     private static String joinList(List<String> v) {
         return v == null ? "" : String.join(",", v);
+    }
+
+    /**
+     * Applies {@link RegexSafetyCheck} to ignore patterns that are new or changed relative to what
+     * is already persisted, letting existing entries through untouched.
+     *
+     * <p>The admin UI re-sends the whole list on every save, so linting all of them would mean an
+     * operator upgrading into a stricter lint cannot save <em>any</em> General setting until they
+     * hunt down a pattern they never edited — and the UI reports a bare "error" without the reason.
+     * Grandfathered entries are not ignored: {@code GlobalConfigHolder} drops them when the
+     * configuration is loaded, which removes the unsafe pattern from use without blocking an
+     * unrelated settings change.
+     */
+    private static void assertNewIgnorePatternsSafe(Dictionary<String, Object> props, List<String> patterns) {
+        Object persisted = props.get(GlobalConfigHolder.CFG_IGNORE_PATTERNS);
+        Set<String> alreadyStored = new HashSet<>();
+        if (persisted != null) {
+            for (String existing : persisted.toString().split(",")) {
+                if (StringUtils.isNotBlank(existing)) {
+                    alreadyStored.add(existing.trim());
+                }
+            }
+        }
+        for (String p : patterns) {
+            if (StringUtils.isNotBlank(p) && !alreadyStored.contains(p.trim())) {
+                RegexSafetyCheck.assertSafe(p);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------------------------
