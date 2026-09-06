@@ -4,8 +4,20 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Lightweight lint that rejects regex patterns likely to enable catastrophic backtracking
+ * Best-effort lint that rejects regex patterns likely to enable catastrophic backtracking
  * (ReDoS). Intended for user-supplied {@code ignorePatterns} values stored in settings.
+ *
+ * <p><strong>This is not the control, and it cannot be made complete.</strong> Both checks key
+ * on {@code ')'}, so a pattern with no group at all is never examined - yet
+ * {@code .*.*.*.*.*.*.*.*.*.*x} costs about 5.7s at 30 characters, well inside
+ * {@link #MAX_PATTERN_LENGTH}. Closing that by enumerating more shapes is not possible in a
+ * character scanner.
+ *
+ * <p>The enforced control is the bounded, interruptible 50ms match in
+ * {@code BruteForceTracker.awaitMatchResult}, which treats a pattern it cannot evaluate as NOT
+ * matched and therefore still counts the login failure (GHSA-7qgr-2hqv-r344). This lint only
+ * raises the bar at configuration time; it is applied on the GraphQL save path and again when a
+ * hand-edited {@code .cfg} is loaded, where an offending entry is dropped rather than rejected.
  */
 public final class RegexSafetyCheck {
 
@@ -77,49 +89,76 @@ public final class RegexSafetyCheck {
     }
 
     private static void assertGroupQuantifierDensity(String pattern) {
-        int depth = 0;
-        int[] quantsAtDepth = new int[MAX_GROUP_DEPTH + 1];
+        GroupScan scan = new GroupScan();
         boolean escaped = false;
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
             boolean wasEscaped = escaped;
             escaped = !wasEscaped && c == '\\' && i + 1 < pattern.length();
             if (!wasEscaped && !escaped) {
-                depth = processGroupChar(c, depth, quantsAtDepth);
+                processGroupChar(pattern, i, scan);
             }
         }
     }
 
-    /** Updates and returns the new nesting depth after processing one (non-escaped) character. */
-    private static int processGroupChar(char c, int depth, int[] quantsAtDepth) {
-        if (c == '(') {
-            return openGroup(depth, quantsAtDepth);
-        }
-        if (c == ')' && depth > 0) {
-            return closeGroup(depth, quantsAtDepth);
-        }
-        if ((c == '+' || c == '*' || c == '{') && depth > 0) {
-            quantsAtDepth[depth]++;
-        }
-        return depth;
+    /** Mutable state for the single forward pass in {@link #assertGroupQuantifierDensity}. */
+    private static final class GroupScan {
+        private final int[] quantsAtDepth = new int[MAX_GROUP_DEPTH + 1];
+        // Counted separately because only UNBOUNDED quantifiers make a repeated group explode:
+        // ([0-9]{2}){3} has a finite state space, (.*a){20} does not.
+        private final int[] unboundedQuantsAtDepth = new int[MAX_GROUP_DEPTH + 1];
+        private int depth;
     }
 
-    private static int openGroup(int depth, int[] quantsAtDepth) {
-        int next = depth + 1;
+    /** Updates the scan state after processing one (non-escaped) character. */
+    private static void processGroupChar(String pattern, int i, GroupScan scan) {
+        char c = pattern.charAt(i);
+        if (c == '(') {
+            openGroup(scan);
+            return;
+        }
+        if (c == ')' && scan.depth > 0) {
+            closeGroup(pattern, i, scan);
+            return;
+        }
+        if (scan.depth > 0 && (c == '+' || c == '*' || c == '{')) {
+            scan.quantsAtDepth[scan.depth]++;
+            if (c != '{') {
+                scan.unboundedQuantsAtDepth[scan.depth]++;
+            }
+        }
+    }
+
+    private static void openGroup(GroupScan scan) {
+        int next = scan.depth + 1;
         if (next > MAX_GROUP_DEPTH) {
             // Reject rather than silently stop tracking: extreme nesting is itself a ReDoS
             // smell, and letting it through would bypass the per-group quantifier check.
             throw new IllegalArgumentException("Pattern group nesting exceeds " + MAX_GROUP_DEPTH);
         }
-        quantsAtDepth[next] = 0;
-        return next;
+        scan.quantsAtDepth[next] = 0;
+        scan.unboundedQuantsAtDepth[next] = 0;
+        scan.depth = next;
     }
 
-    private static int closeGroup(int depth, int[] quantsAtDepth) {
-        if (quantsAtDepth[depth] > MAX_QUANTIFIERS_PER_GROUP) {
+    private static void closeGroup(String pattern, int closeIndex, GroupScan scan) {
+        int depth = scan.depth;
+        if (scan.quantsAtDepth[depth] > MAX_QUANTIFIERS_PER_GROUP) {
             throw new IllegalArgumentException("Pattern group has too many quantifiers ("
-                    + quantsAtDepth[depth] + " > " + MAX_QUANTIFIERS_PER_GROUP + ")");
+                    + scan.quantsAtDepth[depth] + " > " + MAX_QUANTIFIERS_PER_GROUP + ")");
         }
-        return depth - 1;
+        // A bounded repetition applied to a group that itself contains an unbounded quantifier -
+        // (.*a){20}, (a+){10} - is the shape that actually backtracks on Java's engine, where the
+        // textbook (a+)+ forms caught above are optimised away and cost nothing. Checked here
+        // rather than in isNestedQuantifierAt so the escape handling of this pass applies for free.
+        if (scan.unboundedQuantsAtDepth[depth] > 0 && isFollowedByBoundedRepetition(pattern, closeIndex)) {
+            throw new IllegalArgumentException(
+                    "Pattern repeats a group containing an unbounded quantifier at index " + closeIndex);
+        }
+        scan.depth = depth - 1;
+    }
+
+    private static boolean isFollowedByBoundedRepetition(String pattern, int closeIndex) {
+        return closeIndex + 1 < pattern.length() && pattern.charAt(closeIndex + 1) == '{';
     }
 }

@@ -96,10 +96,43 @@ public class GlobalConfigHolder implements ManagedService {
                 .build();
     }
 
+    /**
+     * Applies the same {@link RegexSafetyCheck} lint the GraphQL save path applies, but
+     * <strong>drops</strong> the offending entry instead of throwing.
+     *
+     * <p>The {@code .cfg} is a documented hand-edit surface, so the save-time lint is bypassable;
+     * and grandfathered entries are deliberately allowed to persist through a save, so this is
+     * where they are actually taken out of use. Dropping is the fail-safe direction: one exemption
+     * fewer means the login failures it would have hidden are counted.
+     *
+     * <p>Per-entry rather than all-or-nothing, so one bad pattern cannot disable an operator's
+     * other, legitimate exemptions.
+     *
+     * <p><strong>Never throw from here.</strong> {@code updated()} would abort before
+     * {@code current.set(...)}, leaving the holder serving the previous snapshot — on a cold start
+     * that is {@link #defaults()}, which has {@code activated=false}. A ReDoS lint whose failure
+     * mode is "brute-force protection silently turned itself off" would repeat exactly the
+     * inverted reasoning that caused GHSA-7qgr-2hqv-r344.
+     */
+    private static List<String> safeIgnorePatterns(List<String> raw) {
+        List<String> safe = new ArrayList<>(raw.size());
+        for (String p : raw) {
+            try {
+                RegexSafetyCheck.assertSafe(p);
+                safe.add(p);
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("BFLP: dropping unsafe ignore_patterns entry '{}': {}. Failed logins for"
+                        + " usernames it would have exempted are now counted and can lead to a ban.",
+                        AuditLogger.sanitize(p), e.getMessage());
+            }
+        }
+        return safe;
+    }
+
     static GlobalSettings fromDictionary(Dictionary<String, ?> d) {
         boolean activated = boolProp(d, CFG_ACTIVATED, false);
         String whitelist = stringProp(d, CFG_WHITELIST, DEFAULT_WHITELIST);
-        List<String> ignore = stringListProp(d, CFG_IGNORE_PATTERNS);
+        List<String> ignore = safeIgnorePatterns(stringListProp(d, CFG_IGNORE_PATTERNS));
         List<String> ignorePaths = stringListProp(d, CFG_IGNORE_PATHS);
         boolean trustProxy = boolProp(d, CFG_TRUST_PROXY, false);
         List<String> trustedProxyCidrs = stringListProp(d, CFG_TRUSTED_PROXY_CIDRS);

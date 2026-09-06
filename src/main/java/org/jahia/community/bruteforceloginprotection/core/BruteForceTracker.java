@@ -55,16 +55,17 @@ public class BruteForceTracker implements FailureRecorder {
     private static final long IGNORE_PATTERN_WARN_THROTTLE_MS = 60_000L;
     // Bounded so a flood of failed logins carrying catastrophic usernames cannot exhaust threads.
     // Tasks are short-lived (50ms timeout + interruptible matching), so a small pool + queue is
-    // ample; on saturation we abort and fail closed (see evaluateIgnorePattern).
+    // ample; on saturation we skip the pattern and still count the failure (submitMatchTask).
     private static final int IGNORE_PATTERN_POOL_SIZE =
             Math.max(2, Runtime.getRuntime().availableProcessors());
     private static final int IGNORE_PATTERN_QUEUE_CAPACITY = 256;
 
     // Created in @Activate and shut down in @Deactivate so a bundle refresh never leaves
-    // submissions hitting a terminated pool (which would fail-closed and silently skip all
-    // ignore patterns). Instance state, not static, so the lifecycle is bound to the component.
+    // submissions hitting a terminated pool. Instance state, not static, so the lifecycle is
+    // bound to the component. A torn-down pool means "cannot evaluate", which counts the
+    // failure rather than exempting it.
     private ExecutorService ignorePatternExecutor;
-    private final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
+    private final AtomicLong lastIgnorePatternSkipWarnMs = new AtomicLong(0L);
     // Throttles the fail-open ERROR alert emitted when Hazelcast is unavailable (gates an ERROR, not a WARN).
     private final AtomicLong lastHazelcastDownAlertMs = new AtomicLong(0L);
 
@@ -484,6 +485,17 @@ public class BruteForceTracker implements FailureRecorder {
         if (StringUtils.isBlank(ip)) {
             return false;
         }
+        // Whitelist wins over an existing ban, mirroring BlocklistService (see the whitelist-
+        // precedence note in AuthValveFailureSource.invoke). recordEvent screens whitelisted IPs
+        // out before counting, but without this check a ban already in the map stayed enforced and
+        // adding the address to whitelist_ips did NOT lift it - leaving no remedy but to wait out a
+        // recidive-escalated TTL of up to 7 days. Bans are keyed on IP, not username, so with
+        // trust_x_forwarded_for=false (the default) that ban can be a whole platform's reverse
+        // proxy, and the admin UI offering unbanIp sits behind this very valve. Cheap on the hot
+        // path: getGlobalSettings is an in-memory snapshot and whitelistCache memoizes the parse.
+        if (isWhitelisted(ip, whitelistIpsOrEmpty())) {
+            return false;
+        }
         HazelcastInstance hz = hazelcastInstance();
         // Treat a missing OR not-running Hazelcast as "cannot enforce". This is the per-request
         // hot path, so we deliberately fail OPEN: blocking every login because the distributed
@@ -540,6 +552,20 @@ public class BruteForceTracker implements FailureRecorder {
 
     private boolean isWhitelisted(String ip, String whitelist) {
         return whitelistCache.matchesAny(ip, whitelist);
+    }
+
+    /**
+     * Whitelist string from the current settings snapshot, or empty when settings are not
+     * available yet. Enforcement runs on every request and can be reached before the first
+     * ConfigurationAdmin update lands, so this must never throw: an empty whitelist simply means
+     * no address is exempt, which leaves ban enforcement exactly as it was.
+     */
+    private String whitelistIpsOrEmpty() {
+        if (settingsService == null) {
+            return "";
+        }
+        GlobalSettings settings = settingsService.getGlobalSettings();
+        return settings == null ? "" : StringUtils.defaultString(settings.getWhitelistIps());
     }
 
     private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {
@@ -603,21 +629,14 @@ public class BruteForceTracker implements FailureRecorder {
     }
 
     /**
-     * Submits the match task to the bounded executor. Returns {@code null} when the executor
-     * is shut down (fail-open: NOT_MATCHED) or when the queue is saturated (fail-closed via
-     * {@link #warnIgnorePatternTimeout} before returning MATCHED — handled by the non-null
-     * sentinel return so the caller can distinguish the two cases).
-     *
-     * Returns a non-null Future on success, or null to signal NOT_MATCHED (executor gone).
-     * Fail-closed (queue saturated) is surfaced by warning and returning a special sentinel;
-     * to keep the method simple it instead calls warnIgnorePatternTimeout and returns null,
-     * with the caller treating null as NOT_MATCHED — but pool saturation must be fail-closed.
-     * Therefore this method returns a completed MATCHED future on saturation so the
-     * awaitMatchResult path can handle it uniformly.
+     * Submits the match task to the bounded executor, returning {@code null} when the pattern
+     * cannot be evaluated at all — the executor is absent, shut down, or saturated. The caller
+     * ({@link #evaluateIgnorePattern}) maps {@code null} to NOT_MATCHED, so an unevaluated
+     * pattern never grants an exemption and the login failure is still counted.
      */
     private Future<Boolean> submitMatchTask(Pattern compiled, String username, String p) {
-        // During/after @Deactivate the executor is shut down. Fail OPEN so failure recording
-        // is not silently suppressed when the component is torn down.
+        // During/after @Deactivate the executor is shut down. Treat that as "cannot evaluate"
+        // so failure recording is not silently suppressed when the component is torn down.
         if (ignorePatternExecutor == null || ignorePatternExecutor.isShutdown()) {
             return null;
         }
@@ -627,9 +646,13 @@ public class BruteForceTracker implements FailureRecorder {
             return ignorePatternExecutor.submit(
                     () -> compiled.matcher(new InterruptibleCharSequence(username)).matches());
         } catch (RejectedExecutionException ree) {
-            // Pool + queue saturated (likely a ReDoS-style flood). Fail closed, like a timeout.
-            warnIgnorePatternTimeout(p);
-            return java.util.concurrent.CompletableFuture.completedFuture(Boolean.TRUE);
+            // Pool + queue saturated. Same disposition as a timeout: we could not evaluate the
+            // pattern, so we do not exempt - null is the caller's NOT_MATCHED sentinel and the
+            // failure is counted. Note rejection is node-global rather than scoped to one
+            // username, so this path stops resolving EVERY ignore pattern at once; that is
+            // exactly why it must not hand out a blanket exemption.
+            warnIgnorePatternSkipped(p, "match executor saturated");
+            return null;
         }
     }
 
@@ -643,12 +666,20 @@ public class BruteForceTracker implements FailureRecorder {
                     ? IgnorePatternResult.MATCHED
                     : IgnorePatternResult.NOT_MATCHED;
         } catch (TimeoutException te) {
+            // cancel(true) interrupts the worker; InterruptibleCharSequence turns that into an
+            // abort, so a runaway match does not keep burning a thread to completion.
             future.cancel(true);
-            warnIgnorePatternTimeout(p);
-            // Fail closed: treat a timeout as a match so the failure is silently skipped
-            // (denies an attacker who supplies a catastrophic username from bypassing
-            // counter increments via a slow-regex pattern).
-            return IgnorePatternResult.MATCHED;
+            warnIgnorePatternSkipped(p, "timed out after " + IGNORE_PATTERN_MATCH_TIMEOUT_MS + "ms");
+            // Could not evaluate => do NOT exempt. Returning MATCHED here would mean an attacker
+            // who appends a backtracking suffix to every username is never counted, never banned
+            // and leaves no audit entry - the module's own control, silently disabled by the
+            // attacker's input (GHSA-7qgr-2hqv-r344).
+            //
+            // "Fail closed" is ambiguous for an *exemption* check and was read the wrong way here:
+            // the permissive branch is granting the exemption, so refusing to exempt is the strict
+            // direction. Counting a failure we might have ignored is recoverable (unbanIp);
+            // silently dropping one is not. Same direction as INTERRUPTED in matchesIgnorePattern.
+            return IgnorePatternResult.NOT_MATCHED;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             future.cancel(true);
@@ -660,14 +691,21 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
-    private void warnIgnorePatternTimeout(String p) {
+    /**
+     * Throttled operator warning for an ignore pattern that could not be evaluated. The message
+     * states the consequence, not just the cause: the failure is still counted, so an account the
+     * operator meant to exempt can accrue failures and be banned.
+     */
+    private void warnIgnorePatternSkipped(String p, String reason) {
         long now = System.currentTimeMillis();
-        long last = lastIgnorePatternTimeoutWarnMs.get();
+        long last = lastIgnorePatternSkipWarnMs.get();
         if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
-                && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)
+                && lastIgnorePatternSkipWarnMs.compareAndSet(last, now)
                 && LOGGER.isWarnEnabled()) {
-            LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; treating as MATCHED to deny ReDoS bypass",
-                    AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
+            LOGGER.warn("BFLP: ignore-pattern '{}' not evaluated ({}); treating it as NOT matched, so this"
+                    + " login failure is still counted. A username you meant to exempt may end up banned"
+                    + " - clear it with unbanIp, and consider replacing the pattern.",
+                    AuditLogger.sanitize(p), reason);
         }
     }
 

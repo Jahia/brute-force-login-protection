@@ -64,6 +64,41 @@ Go to **Administration → Server settings → Configuration → Brute force log
 - **Audit** — browse recent events, clear the log.
 - **Integrations** — configure the email recipient and the webhook URL/secret.
 
+### Ignore patterns (exempting service accounts)
+
+`ignore_patterns` is a comma-separated list of **regexes matched against the username**. Matching is
+anchored (full-match) and lower-cased, so `^service-.*$` exempts `Service-Backup` as well as
+`service-backup`. Use it for accounts whose failed logins are noise rather than signal — monitoring
+probes, batch jobs, health checks.
+
+Two things are worth knowing before you use it:
+
+**An exemption you cannot evaluate is not applied.** Matching runs on a bounded, interruptible
+executor with a 50 ms budget, because the pattern is yours but the username is the attacker's. If a
+match cannot complete — it exceeds the budget, or the executor is saturated — the pattern is treated
+as **not matched** and the login failure is counted normally. That is deliberate: the alternative
+lets anyone who supplies an expensive username opt out of the counter entirely, silently. You will
+see a throttled warning naming the pattern; the account it protects may accumulate failures and be
+banned, which you clear with `unbanIp`. See
+[ADR 0006](docs/adr/0006-count-failures-when-ignore-pattern-evaluation-fails.md).
+
+**Avoid repeating a group that contains `*` or `+`.** This is the shape that makes Java's regex
+engine backtrack exponentially:
+
+```
+(.*a){20}      # DON'T — ~8s at 28 characters, ~101s at 32
+^service-.*$   # fine — linear
+```
+
+Such patterns are rejected when saved and dropped (with a warning) when a hand-edited `.cfg` is
+loaded. Note the check is a best-effort lint, not a guarantee: it cannot recognise every expensive
+pattern, which is exactly why the runtime budget above counts rather than exempts. Counter-intuitively
+the *textbook* ReDoS examples (`^(a+)+$` and friends) are harmless on Java — its optimiser eliminates
+them — so they are not the ones to watch for.
+
+`ignore_patterns` only skips failure *detection*. Ban *enforcement* is unaffected, and whitelisted
+IPs are never blocked.
+
 ### Ignore paths (exempting non-login endpoints)
 
 The enforcement valve sits at position 0 of the auth pipeline and inspects **every** request, not

@@ -10,6 +10,7 @@ import java.util.Dictionary;
 import java.util.Hashtable;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -165,5 +166,66 @@ public class SettingsServiceSaveTest {
     public void deleteJailOnMissingConfigurationStillReturnsTrue() throws Exception {
         when(configurationAdmin.listConfigurations(anyString())).thenReturn(null);
         assertThat(settingsService.deleteJail("login2")).isTrue();
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Ignore-pattern linting on save is limited to NEW or CHANGED entries.
+    //
+    // GeneralTab re-sends the whole list on every save, so linting all of them would mean an
+    // operator who upgrades into a stricter lint cannot save ANY General setting until they track
+    // down a pattern they never touched - and the UI discards the exception message, so the banner
+    // says only "error". Already-stored patterns are grandfathered here and dropped at load
+    // instead (GlobalConfigHolder), which never blocks an unrelated settings change.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void saveGlobalSettingsRejectsANewlyIntroducedUnsafeIgnorePattern() throws Exception {
+        Configuration cfg = mockConfigWithProps();
+        when(configurationAdmin.getConfiguration(GlobalConfigHolder.PID, "?")).thenReturn(cfg);
+
+        GlobalSettingsUpdate update = GlobalSettingsUpdate.builder()
+                .ignorePatterns(java.util.Arrays.asList("^service-.*$", "(.*a){20}"))
+                .build();
+
+        assertThatThrownBy(() -> settingsService.saveGlobalSettings(update))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unbounded quantifier");
+        verify(cfg, never()).update(any());
+    }
+
+    @Test
+    public void saveGlobalSettingsGrandfathersAnAlreadyStoredUnsafeIgnorePattern() throws Exception {
+        Configuration cfg = mock(Configuration.class);
+        Hashtable<String, Object> existing = new Hashtable<>();
+        // Persisted before the lint was tightened - e.g. hand-written into the .cfg.
+        existing.put(GlobalConfigHolder.CFG_IGNORE_PATTERNS, "^service-.*$,(.*a){20}");
+        when(cfg.getProperties()).thenReturn(existing);
+        when(configurationAdmin.getConfiguration(GlobalConfigHolder.PID, "?")).thenReturn(cfg);
+
+        // The operator only flips "activated"; the UI resends the untouched pattern list verbatim.
+        GlobalSettingsUpdate update = GlobalSettingsUpdate.builder()
+                .activated(true)
+                .ignorePatterns(java.util.Arrays.asList("^service-.*$", "(.*a){20}"))
+                .build();
+
+        assertThat(settingsService.saveGlobalSettings(update)).isTrue();
+        verify(cfg, times(1)).update(any());
+    }
+
+    @Test
+    public void saveGlobalSettingsRejectsAnUnsafePatternAddedAlongsideGrandfatheredOnes() throws Exception {
+        Configuration cfg = mock(Configuration.class);
+        Hashtable<String, Object> existing = new Hashtable<>();
+        existing.put(GlobalConfigHolder.CFG_IGNORE_PATTERNS, "(.*a){20}");
+        when(cfg.getProperties()).thenReturn(existing);
+        when(configurationAdmin.getConfiguration(GlobalConfigHolder.PID, "?")).thenReturn(cfg);
+
+        GlobalSettingsUpdate update = GlobalSettingsUpdate.builder()
+                .ignorePatterns(java.util.Arrays.asList("(.*a){20}", "(b+){9}"))
+                .build();
+
+        assertThatThrownBy(() -> settingsService.saveGlobalSettings(update))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(cfg, never()).update(any());
     }
 }
