@@ -473,16 +473,19 @@ public class BruteForceTrackerTest {
     }
 
     // -------------------------------------------------------------------------------------------
-    // F14 residual — a genuine (not mocked) ReDoS-timeout race. Attempted with a real
-    // tracker.activate() (wiring up the actual bounded ExecutorService) against the classic
-    // "^(a+)+$" catastrophic-backtracking pattern: empirically, on this JDK/hardware combination
-    // a 40-character adversarial input still resolved to NOT_MATCHED well within the 50ms
-    // executor timeout (no real blow-up observed), and reliably forcing a genuine multi-second
-    // backtrack without either (a) a very long, slow input or (b) JVM-specific tuning would make
-    // this test slow and/or flaky in CI. Per the gap list's own explicit trade-off note, this is
-    // "deliberately last/optional" -- the existing mocked-Future test
-    // (RegexSafetyCheckTest / BruteForceTrackerIgnorePatternTest's ReDoS-fail-closed case) is
-    // accepted as sufficient coverage of the fail-closed *consequence*, and a real-timeout race is
-    // intentionally NOT added here to avoid flakiness.
+    // A genuine (not mocked) ReDoS-timeout race is still intentionally NOT tested here, because a
+    // real backtrack takes seconds to minutes of wall clock and would make the suite slow.
+    //
+    // An earlier note here recorded that "^(a+)+$" resolved well within the 50ms budget even at 40
+    // characters, and read that as "a real timeout is hard to trigger". The correct reading is that
+    // Java's regex optimiser makes the TEXTBOOK nested-quantifier forms harmless -- measured 0ms for
+    // ^(a+)+$, (a*)*$, (a|a)+$ and (x+x+)+y -- while a bounded repetition over a group containing an
+    // unbounded quantifier is not: (.*a){20} takes ~8s at 28 characters and ~101s at 32.
+    // That inversion is why RegexSafetyCheck used to reject the harmless shapes and admit the
+    // dangerous one, and it is why the lint is documented as best-effort rather than as the control.
+    //
+    // The disposition itself -- an unevaluated pattern must not grant an exemption -- is covered
+    // deterministically by BruteForceTrackerIgnorePatternTest (timeout, saturation and shutdown),
+    // which is the property that actually matters (GHSA-7qgr-2hqv-r344).
     // -------------------------------------------------------------------------------------------
 }

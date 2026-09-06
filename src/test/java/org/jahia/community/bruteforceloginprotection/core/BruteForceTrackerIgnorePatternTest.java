@@ -20,6 +20,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -38,7 +39,8 @@ import static org.mockito.Mockito.when;
  * Tests for the ignore-pattern matching path in {@link BruteForceTracker#recordEvent}.
  *
  * The tracker is wired with a real ignorePatternExecutor by calling activate() after injection,
- * so the actual regex-matching (including the timeout / fail-closed path) is exercised.
+ * so the actual regex-matching is exercised. The timeout / saturation dispositions are driven
+ * deterministically with an injected stub executor.
  */
 public class BruteForceTrackerIgnorePatternTest {
 
@@ -236,19 +238,20 @@ public class BruteForceTrackerIgnorePatternTest {
     }
 
     // -------------------------------------------------------------------------
-    // 7. Catastrophic-backtracking pattern triggers fail-closed (treated as MATCHED)
-    //    Use a real ReDoS pattern with a long input that will timeout in 50ms.
-    //    We verify the event is silently dropped (fail-closed = treated as a match).
+    // 7. A match that TIMES OUT is treated as NOT matched, so the failure is counted
+    //    (GHSA-7qgr-2hqv-r344). An unevaluated pattern must never grant an exemption:
+    //    otherwise an attacker appending a backtracking suffix to every username is
+    //    never counted, never banned, and leaves no audit entry.
     // -------------------------------------------------------------------------
 
     @Test
     @SuppressWarnings("unchecked")
-    public void catastrophicRegex_failClosed_eventSkipped() throws Exception {
-        // Deterministically exercise the fail-closed contract: when matching a pattern
-        // exceeds the timeout, evaluateIgnorePattern catches TimeoutException and treats
-        // the pattern as MATCHED, so the username is "ignored" and no window entry is
-        // created. Rather than racing a real ReDoS (timing/JIT-dependent), inject a stub
-        // executor whose Future.get(timeout) throws TimeoutException.
+    public void matchTimeout_treatedAsNotMatched_incrementsWindow() throws Exception {
+        // Rather than racing a real ReDoS (timing/JIT-dependent), inject a stub executor
+        // whose Future.get(timeout) throws TimeoutException. The configured pattern is the
+        // one that actually backtracks on Java's engine — (.*a){20} takes ~8s at 28 chars
+        // and ~101s at 32 — so the test documents the real payload. Note the textbook forms
+        // like (a+)+ complete in 0ms on Java and would never reach this path.
         ExecutorService timingOutExecutor = mock(ExecutorService.class);
         Future<Boolean> timingOutFuture = mock(Future.class);
         when(timingOutFuture.get(anyLong(), any(TimeUnit.class)))
@@ -257,12 +260,72 @@ public class BruteForceTrackerIgnorePatternTest {
         inject(tracker, "ignorePatternExecutor", timingOutExecutor);
 
         when(settingsService.getGlobalSettings()).thenReturn(
-                settingsWithPatterns(Collections.singletonList("(a+)+")));
+                settingsWithPatterns(Collections.singletonList("(.*a){20}")));
         when(settingsService.getJail("login")).thenReturn(loginJail());
 
         tracker.recordEvent(eventFor("10.0.0.7", "aaaaaaaaaab"));
 
-        // Fail-closed: the event was dropped before the window increment.
-        assertThat(windowsStore).isEmpty();
+        // The failure is counted...
+        assertThat(windowsStore).hasSize(1);
+        // ...and leaves an audit trail, which is the half of the loss an operator would
+        // otherwise never be able to reconstruct.
+        verify(auditLogger, atLeastOnce()).log(eq(AuditLogger.EVENT_FAILURE),
+                eq("10.0.0.7"), anyString(), anyString(), anyString());
+        // Counting must not come at the cost of leaking the runaway match: cancel(true)
+        // is what lets InterruptibleCharSequence abort the worker thread. Pinned here so a
+        // later simplification cannot drop it and reintroduce a CPU-exhaustion DoS.
+        verify(timingOutFuture).cancel(true);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. A saturated match executor is treated as NOT matched, so the failure is counted.
+    //    Weaker precondition than the timeout above: no catastrophic pattern is needed,
+    //    and rejection is node-global, so every ignore pattern stops resolving at once.
+    // -------------------------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void executorSaturated_treatedAsNotMatched_incrementsWindow() throws Exception {
+        ExecutorService saturated = mock(ExecutorService.class);
+        when(saturated.submit(any(Callable.class)))
+                .thenThrow(new RejectedExecutionException("pool + queue full"));
+        // isShutdown() is deliberately left unstubbed: Mockito returns false, so the guard
+        // in submitMatchTask passes and execution reaches the rejection path under test.
+        inject(tracker, "ignorePatternExecutor", saturated);
+
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList("^service-.*")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        // The username genuinely MATCHES the configured pattern. That is the point: the
+        // module never got to run the match, and "could not evaluate" must not be allowed
+        // to mean "exempt".
+        tracker.recordEvent(eventFor("10.0.0.8", "service-account"));
+
+        assertThat(windowsStore).hasSize(1);
+        verify(auditLogger, atLeastOnce()).log(eq(AuditLogger.EVENT_FAILURE),
+                eq("10.0.0.8"), anyString(), anyString(), anyString());
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. A shut-down executor is treated as NOT matched (already correct before the fix;
+    //    pinned so the three "cannot evaluate" dispositions stay consistent).
+    // -------------------------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void executorShutDown_treatedAsNotMatched_incrementsWindow() throws Exception {
+        ExecutorService stopped = mock(ExecutorService.class);
+        when(stopped.isShutdown()).thenReturn(true);
+        inject(tracker, "ignorePatternExecutor", stopped);
+
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList("^service-.*")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        tracker.recordEvent(eventFor("10.0.0.9", "service-account"));
+
+        assertThat(windowsStore).hasSize(1);
+        verify(stopped, never()).submit(any(Callable.class));
     }
 }
