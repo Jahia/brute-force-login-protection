@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.1.2-SNAPSHOT] — Unreleased
+## [3.1.3-SNAPSHOT] — Unreleased
+
+### Security
+
+- **Login failures are no longer silently skipped when an ignore pattern cannot be evaluated** ([GHSA-7qgr-2hqv-r344](https://github.com/Jahia/brute-force-login-protection/security/advisories/GHSA-7qgr-2hqv-r344)). `recordEvent` treats "username matches an ignore pattern" as "skip this failure" — no window increment, no audit entry, no ban. Two error paths returned that disposition, so an error became a free pass: a match that exceeded the 50 ms budget (`TimeoutException`), and a saturated match executor (`RejectedExecutionException`). An attacker appending a backtracking suffix to every attempted username was therefore never counted, never banned, and left no audit trail — the attack both unthrottled and invisible. Both paths now treat the pattern as **not matched**, so the failure is counted, matching the disposition already used for thread interruption. Failing toward counting is the recoverable direction: the cost is a username the operator wanted exempted being counted and possibly banned, undone with one `unbanIp`. See [ADR 0006](docs/adr/0006-count-failures-when-ignore-pattern-evaluation-fails.md). Only deployments that enabled protection **and** configured a non-trivial `ignore_patterns` value were affected; the shipped defaults (`activated=false`, empty `ignore_patterns`) are not.
+- **ReDoS lint corrected to target the shape that actually backtracks.** `RegexSafetyCheck` rejected the textbook nested-quantifier forms and admitted the dangerous one. Measured on JDK 17: `^(a+)+$`, `(a*)*$`, `(a|a)+$` and `(x+x+)+y` all complete in **0 ms** (Java's optimiser eliminates them), while `(.*a){20}` — the payload used in the advisory — takes **8 s at 28 characters and ~101 s at 32**. A bounded repetition applied to a group containing an unbounded quantifier is now rejected. `([0-9]{2}){3}` and `(https?){2}` remain accepted: a bounded inner quantifier keeps the state space finite.
+- **Ignore patterns are linted when the `.cfg` is loaded**, not only when saved through the admin UI. The configuration file is a documented hand-edit surface, so the save-time check alone was bypassable. Unsafe entries are dropped individually with a WARN naming the pattern and its consequence; the load never fails, because aborting it would leave the module serving `activated=false` defaults.
+- **The whitelist now takes precedence over an existing ban at enforcement time.** `whitelist_ips` was consulted when recording a failure but not when enforcing one, so adding an address to the whitelist did not lift a ban it had already accrued — leaving no remedy but to wait out a recidive-escalated TTL of up to seven days, from behind the same valve that gates the admin UI. `BlocklistService` already behaved this way; bans now match.
+
+**Upgrade note.** If an existing `ignore_patterns` value contains a repeated group holding an unbounded quantifier — the `(…*…){n}` or `(…+…){n}` shape — it is now dropped at load with a WARN, and the failures it used to hide are counted. Rewrite it (usually as a simple anchored pattern such as `^service-.*$`) or add the source to `whitelist_ips`. Patterns already persisted are not rejected on save, so an unrelated settings change is never blocked by one.
+
+## [3.1.2] — 2026-07-09
 
 ### Added
 
@@ -69,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Admin UI:** React tabbed interface (General, Jails, Bans, Audit, Integrations) with GraphQL backing.
 - **Cluster security hardening:** Optional per-install group password (auto-generated or custom) and mutual-TLS for Hazelcast cluster traffic.
 - **Reverse proxy support:** Configurable trusted proxy CIDR allowlist for `X-Forwarded-For` header validation (right-to-left chain walk).
-- **Resilient ignore patterns:** ReDoS-hardened regex engine with bounded compilation time and fail-closed timeout semantics.
+- **Resilient ignore patterns:** ReDoS-hardened regex engine with bounded compilation time and fail-closed timeout semantics. *(Those timeout semantics were inverted and skipped the login failure; superseded in 3.1.3 — see Security, above, and GHSA-7qgr-2hqv-r344.)*
 
 ### Fixed
 
