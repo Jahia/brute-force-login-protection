@@ -485,6 +485,17 @@ public class BruteForceTracker implements FailureRecorder {
         if (StringUtils.isBlank(ip)) {
             return false;
         }
+        // Whitelist wins over an existing ban, mirroring BlocklistService (see the whitelist-
+        // precedence note in AuthValveFailureSource.invoke). recordEvent screens whitelisted IPs
+        // out before counting, but without this check a ban already in the map stayed enforced and
+        // adding the address to whitelist_ips did NOT lift it - leaving no remedy but to wait out a
+        // recidive-escalated TTL of up to 7 days. Bans are keyed on IP, not username, so with
+        // trust_x_forwarded_for=false (the default) that ban can be a whole platform's reverse
+        // proxy, and the admin UI offering unbanIp sits behind this very valve. Cheap on the hot
+        // path: getGlobalSettings is an in-memory snapshot and whitelistCache memoizes the parse.
+        if (isWhitelisted(ip, whitelistIpsOrEmpty())) {
+            return false;
+        }
         HazelcastInstance hz = hazelcastInstance();
         // Treat a missing OR not-running Hazelcast as "cannot enforce". This is the per-request
         // hot path, so we deliberately fail OPEN: blocking every login because the distributed
@@ -541,6 +552,20 @@ public class BruteForceTracker implements FailureRecorder {
 
     private boolean isWhitelisted(String ip, String whitelist) {
         return whitelistCache.matchesAny(ip, whitelist);
+    }
+
+    /**
+     * Whitelist string from the current settings snapshot, or empty when settings are not
+     * available yet. Enforcement runs on every request and can be reached before the first
+     * ConfigurationAdmin update lands, so this must never throw: an empty whitelist simply means
+     * no address is exempt, which leaves ban enforcement exactly as it was.
+     */
+    private String whitelistIpsOrEmpty() {
+        if (settingsService == null) {
+            return "";
+        }
+        GlobalSettings settings = settingsService.getGlobalSettings();
+        return settings == null ? "" : StringUtils.defaultString(settings.getWhitelistIps());
     }
 
     private boolean matchesIgnorePattern(String rawUsername, List<String> patterns) {

@@ -473,6 +473,35 @@ public class BruteForceTrackerTest {
     }
 
     // -------------------------------------------------------------------------------------------
+    // Whitelist precedence on the ENFORCEMENT path. recordEvent already refuses to count a
+    // whitelisted IP, but enforcement consulted only the ban map -- so adding an IP to
+    // whitelist_ips did not lift a ban it had already accrued, and the operator had to wait out a
+    // recidive-escalated TTL (up to 7 days). That matters because bans are keyed on IP, not
+    // username: with trust_x_forwarded_for=false (the default) every client behind a reverse proxy
+    // presents the load balancer's address, so a single ban can lock out a whole platform -- and
+    // the admin UI that offers unbanIp sits behind the same valve.
+    // BlocklistService already gives the whitelist precedence; this restores the same invariant
+    // for bans.
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void whitelistedIpIsNotEnforcedEvenWhenPresentInTheBanMap() {
+        when(settingsService.getGlobalSettings()).thenReturn(activeSettings());
+        when(settingsService.getJail("login")).thenReturn(loginJail(3, 60L, 60L));
+
+        // Ban a loopback address directly: banManually is the one route that can put a
+        // whitelisted IP into the map, since recordEvent screens the whitelist out first.
+        assertThat(tracker.banManually("127.0.0.1", "login", 3600, "operator error")).isTrue();
+        assertThat(bansStore.get("127.0.0.1")).isNotNull();
+
+        // The ban record still exists, but enforcement must not act on it.
+        assertThat(tracker.isIpCurrentlyBanned("127.0.0.1")).isFalse();
+        // A non-whitelisted IP is unaffected by the new guard.
+        assertThat(tracker.banManually("10.0.0.99", "login", 3600, "real ban")).isTrue();
+        assertThat(tracker.isIpCurrentlyBanned("10.0.0.99")).isTrue();
+    }
+
+    // -------------------------------------------------------------------------------------------
     // A genuine (not mocked) ReDoS-timeout race is still intentionally NOT tested here, because a
     // real backtrack takes seconds to minutes of wall clock and would make the suite slow.
     //
