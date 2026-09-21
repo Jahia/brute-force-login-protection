@@ -55,14 +55,20 @@ public class BruteForceTracker implements FailureRecorder {
     private static final long IGNORE_PATTERN_WARN_THROTTLE_MS = 60_000L;
     // Bounded so a flood of failed logins carrying catastrophic usernames cannot exhaust threads.
     // Tasks are short-lived (50ms timeout + interruptible matching), so a small pool + queue is
-    // ample; on saturation we abort and fail closed (see evaluateIgnorePattern).
+    // ample; on saturation we abandon the ignore-pattern test and COUNT the failure
+    // (see submitMatchTask) rather than letting the flood suppress the counter.
     private static final int IGNORE_PATTERN_POOL_SIZE =
             Math.max(2, Runtime.getRuntime().availableProcessors());
     private static final int IGNORE_PATTERN_QUEUE_CAPACITY = 256;
+    // An over-long username is the vehicle for making an operator's regex backtrack. Refusing to
+    // run the match on one (rather than truncating it, which could make a pattern match input the
+    // operator never wrote) bounds the work an attacker can force onto the pool, and errs toward
+    // counting: a username this long is simply never exempted. No real account name comes close.
+    private static final int MAX_IGNORE_MATCH_USERNAME_LENGTH = 256;
 
     // Created in @Activate and shut down in @Deactivate so a bundle refresh never leaves
-    // submissions hitting a terminated pool (which would fail-closed and silently skip all
-    // ignore patterns). Instance state, not static, so the lifecycle is bound to the component.
+    // submissions hitting a terminated pool (which would skip the ignore-pattern test on every
+    // event). Instance state, not static, so the lifecycle is bound to the component.
     private ExecutorService ignorePatternExecutor;
     private final AtomicLong lastIgnorePatternTimeoutWarnMs = new AtomicLong(0L);
     // Throttles the fail-open ERROR alert emitted when Hazelcast is unavailable (gates an ERROR, not a WARN).
@@ -550,6 +556,11 @@ public class BruteForceTracker implements FailureRecorder {
         // case/whitespace variants of an allowlisted account ("Admin", " admin ") cannot bypass an
         // operator's ignorePatterns. The original-case username is still recorded in the audit log.
         String username = rawUsername.trim().toLowerCase(java.util.Locale.ROOT);
+        if (username.length() > MAX_IGNORE_MATCH_USERNAME_LENGTH) {
+            LOGGER.debug("BFLP: username of {} chars exceeds the {}-char ignore-match cap; not exempted",
+                    username.length(), MAX_IGNORE_MATCH_USERNAME_LENGTH);
+            return false;
+        }
         for (String p : patterns) {
             IgnorePatternResult result = evaluateIgnorePattern(username, p);
             if (result == IgnorePatternResult.MATCHED) {
@@ -603,17 +614,13 @@ public class BruteForceTracker implements FailureRecorder {
     }
 
     /**
-     * Submits the match task to the bounded executor. Returns {@code null} when the executor
-     * is shut down (fail-open: NOT_MATCHED) or when the queue is saturated (fail-closed via
-     * {@link #warnIgnorePatternTimeout} before returning MATCHED — handled by the non-null
-     * sentinel return so the caller can distinguish the two cases).
+     * Submits the match task to the bounded executor.
      *
-     * Returns a non-null Future on success, or null to signal NOT_MATCHED (executor gone).
-     * Fail-closed (queue saturated) is surfaced by warning and returning a special sentinel;
-     * to keep the method simple it instead calls warnIgnorePatternTimeout and returns null,
-     * with the caller treating null as NOT_MATCHED — but pool saturation must be fail-closed.
-     * Therefore this method returns a completed MATCHED future on saturation so the
-     * awaitMatchResult path can handle it uniformly.
+     * Returns a non-null {@link Future} on success, or {@code null} when the match could not be
+     * run at all — executor shut down, or pool + queue saturated. The caller maps {@code null} to
+     * {@link IgnorePatternResult#NOT_MATCHED}, i.e. the failure is COUNTED. That is the only safe
+     * direction: MATCHED means "skip this login failure", so an attacker able to saturate the pool
+     * could otherwise switch the whole counter off (JAHIA-SEC-362).
      */
     private Future<Boolean> submitMatchTask(Pattern compiled, String username, String p) {
         // During/after @Deactivate the executor is shut down. Fail OPEN so failure recording
@@ -627,9 +634,10 @@ public class BruteForceTracker implements FailureRecorder {
             return ignorePatternExecutor.submit(
                     () -> compiled.matcher(new InterruptibleCharSequence(username)).matches());
         } catch (RejectedExecutionException ree) {
-            // Pool + queue saturated (likely a ReDoS-style flood). Fail closed, like a timeout.
-            warnIgnorePatternTimeout(p);
-            return java.util.concurrent.CompletableFuture.completedFuture(Boolean.TRUE);
+            // Pool + queue saturated (likely a ReDoS-style flood). Give up on the exemption test
+            // and let the caller count the failure — a flood must never buy the attacker immunity.
+            warnIgnorePatternAborted(p, "executor saturated");
+            return null;
         }
     }
 
@@ -644,11 +652,14 @@ public class BruteForceTracker implements FailureRecorder {
                     : IgnorePatternResult.NOT_MATCHED;
         } catch (TimeoutException te) {
             future.cancel(true);
-            warnIgnorePatternTimeout(p);
-            // Fail closed: treat a timeout as a match so the failure is silently skipped
-            // (denies an attacker who supplies a catastrophic username from bypassing
-            // counter increments via a slow-regex pattern).
-            return IgnorePatternResult.MATCHED;
+            warnIgnorePatternAborted(p, "timeout");
+            // MATCHED means "skip this login failure". An exemption test that could not complete
+            // must therefore NOT return MATCHED: doing so let an attacker disable the counter for
+            // every attempt just by appending a backtracking suffix to the username he submits —
+            // the harder he attacked, the less was counted (JAHIA-SEC-362, GHSA-7qgr-2hqv-r344).
+            // Counting is the recoverable direction: the worst case is a false positive against a
+            // username the operator meant to ignore, and it is loud in the log, not silent.
+            return IgnorePatternResult.NOT_MATCHED;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             future.cancel(true);
@@ -660,14 +671,15 @@ public class BruteForceTracker implements FailureRecorder {
         }
     }
 
-    private void warnIgnorePatternTimeout(String p) {
+    private void warnIgnorePatternAborted(String p, String cause) {
         long now = System.currentTimeMillis();
         long last = lastIgnorePatternTimeoutWarnMs.get();
         if (now - last > IGNORE_PATTERN_WARN_THROTTLE_MS
                 && lastIgnorePatternTimeoutWarnMs.compareAndSet(last, now)
                 && LOGGER.isWarnEnabled()) {
-            LOGGER.warn("BFLP: ignore-pattern '{}' timed out after {}ms; treating as MATCHED to deny ReDoS bypass",
-                    AuditLogger.sanitize(p), IGNORE_PATTERN_MATCH_TIMEOUT_MS);
+            LOGGER.warn("BFLP: ignore-pattern '{}' abandoned ({}, budget {}ms); the login failure is COUNTED, "
+                    + "not ignored. Replace this pattern with a linear-time one.",
+                    AuditLogger.sanitize(p), cause, IGNORE_PATTERN_MATCH_TIMEOUT_MS);
         }
     }
 

@@ -8,7 +8,9 @@ import { createUser, deleteUser, grantRoles } from '@jahia/cypress'
  *  - Backend: `@GraphQLRequiresPermission("bruteForceLoginProtectionAdmin")` is enforced on every
  *    query/mutation in BruteForceLoginProtectionQueryExtension / MutationExtension as a root-node
  *    ACL check (`session.getNode("/").hasPermission("bruteForceLoginProtectionAdmin")`).
- *  - Frontend: `requiredPermission: 'bruteForceLoginProtectionAdmin'` in register.jsx gates the admin route.
+ *  - Frontend: `requiredPermission: 'bruteForceLoginProtectionAdmin'` in register.jsx gates the module's
+ *    ENTRY in the administration console. It does not grant entry to the console itself — that is
+ *    gated on `administrationAccess` — so the permission is sufficient for GraphQL but not for the UI.
  *  - RBAC content: the module ships the assignable `brute-force-login-protection-administrator` role
  *    (src/main/import/roles.xml) granting ONLY `administrationAccess` + that permission.
  *
@@ -18,9 +20,11 @@ import { createUser, deleteUser, grantRoles } from '@jahia/cypress'
 describe('Brute Force Login Protection — permission enforcement', () => {
     const ROLE_NAME = 'brute-force-login-protection-administrator'
     // SUPPORT-646 (F20 residual/D2): a genuinely DECOUPLED role -- granting ONLY
-    // bruteForceLoginProtectionAdmin, with no administrationAccess at all -- to actually prove
-    // the permission is independently sufficient, rather than relying on the shipped
-    // administrator role which bundles both permissions together (see D2).
+    // bruteForceLoginProtectionAdmin, with no administrationAccess at all. It proves the
+    // permission is independently sufficient for the GRAPHQL API; it is NOT sufficient for the
+    // admin UI, and cannot be (see the Admin UI authorization block below). This is an API-only
+    // role -- e.g. a service account that reads or mutates the module's GraphQL without being a
+    // console administrator.
     const MODULE_ONLY_ROLE_NAME = 'brute-force-login-protection-module-only'
     const DENIED_USER = 'bflpDeniedUser'
     const ALLOWED_USER = 'bflpAllowedUser'
@@ -129,11 +133,29 @@ describe('Brute Force Login Protection — permission enforcement', () => {
             cy.contains('button', /Flush all/i).should('be.visible')
         })
 
-        // F20 residual: same UI-level proof, but with administrationAccess entirely absent.
-        it('shows the admin panel to a user granted ONLY bruteForceLoginProtectionAdmin (no administrationAccess)', () => {
+        // The module permission alone is NOT sufficient to reach the admin UI, and cannot be:
+        // register.jsx attaches this route with targets ['administration-server-configuration:10'],
+        // so `requiredPermission: 'bruteForceLoginProtectionAdmin'` only gates the menu ENTRY once
+        // you are already inside the administration console — whose route tree Jahia gates on
+        // `administrationAccess`. A user holding only bruteForceLoginProtectionAdmin therefore
+        // loads the console shell (the module's JS and GraphQL both answer 200) but is never
+        // offered the entry, so the panel never renders.
+        //
+        // This asserted the opposite until SEC-362's test pass. The premise was unreachable by
+        // construction, so the test could only ever have passed if the permission gate had been
+        // removed. It is inverted rather than deleted because the real constraint is worth
+        // guarding: it documents that `…-module-only` is an API-ONLY role, and it would fail if
+        // someone "fixed" it by quietly adding administrationAccess to that role (which would make
+        // it permission-identical to the shipped …-administrator role).
+        //
+        // What stops this absence assertion from being vacuous (it would also "pass" on a page
+        // that never loaded) is the test immediately above: identical visit, identical selector,
+        // one variable — administrationAccess — asserting the button IS visible. That pair is the
+        // control, which is why this does not reach for a separate, brittle shell selector.
+        it('does NOT expose the admin panel to a user granted ONLY bruteForceLoginProtectionAdmin (no administrationAccess)', () => {
             cy.login(MODULE_ONLY_USER, PASSWORD)
-            cy.visit(ADMIN_PATH)
-            cy.contains('button', /Flush all/i).should('be.visible')
+            cy.visit(ADMIN_PATH, { failOnStatusCode: false })
+            cy.contains('button', /Flush all/i).should('not.exist')
         })
     })
 })

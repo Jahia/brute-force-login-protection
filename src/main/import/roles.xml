@@ -21,8 +21,17 @@
         the box an operator wanting fine-grained-only access must currently author this role
         themselves (see D2). Shipping it directly closes that gap and, as a side effect, lets the
         Cypress permission suite (02-bruteForceLoginProtection-Permissions.cy.ts) prove the
-        bruteForceLoginProtectionAdmin permission is independently sufficient at the GraphQL/UI
+        bruteForceLoginProtectionAdmin permission is independently sufficient at the GraphQL
         layer, not merely "declared independently" in the CND.
+
+        SCOPE: this is an API-ONLY role. It does NOT give access to the admin UI, and cannot:
+        register.jsx attaches the module's screen with targets ['administration-server-configuration:10'],
+        so its requiredPermission only gates the menu ENTRY inside the administration console,
+        whose route tree Jahia gates on administrationAccess. A user holding only this role loads
+        the console shell but is never offered the entry. Grant the …-administrator role above for
+        UI access; grant this one for a service account that talks to the module's GraphQL.
+        Do NOT "fix" that by adding administrationAccess here; it would make this role
+        permission-identical to …-administrator and leave no decoupled role at all.
 
         SUPPORT-646 (Stage 7 bugfix): j:privilegedAccess="true" is REQUIRED here, matching the
         role above. Without it, Jahia's org.jahia.services.content.AclListener never adds a user

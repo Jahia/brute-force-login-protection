@@ -481,8 +481,8 @@ public class BruteForceTrackerTest {
     // backtrack without either (a) a very long, slow input or (b) JVM-specific tuning would make
     // this test slow and/or flaky in CI. Per the gap list's own explicit trade-off note, this is
     // "deliberately last/optional" -- the existing mocked-Future test
-    // (RegexSafetyCheckTest / BruteForceTrackerIgnorePatternTest's ReDoS-fail-closed case) is
-    // accepted as sufficient coverage of the fail-closed *consequence*, and a real-timeout race is
-    // intentionally NOT added here to avoid flakiness.
+    // (BruteForceTrackerIgnorePatternTest#ignorePatternTimeout_stillCountsTheFailure) is accepted
+    // as sufficient coverage of the timeout *consequence* — the failure is counted, not exempted —
+    // and a real-timeout race is intentionally NOT added here to avoid flakiness.
     // -------------------------------------------------------------------------------------------
 }
