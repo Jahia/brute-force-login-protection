@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.1.2-SNAPSHOT] — Unreleased
+## [3.1.3-SNAPSHOT] — Unreleased
+
+### Security
+
+- **An ignore-pattern that exceeded its match budget silently disabled the counter (JAHIA-SEC-362, [GHSA-7qgr-2hqv-r344](https://github.com/Jahia/brute-force-login-protection/security/advisories/GHSA-7qgr-2hqv-r344), CVSS 4.8 medium).** The username of a failed login is tested against the operator's `ignore_patterns` on a worker thread with a 50 ms budget. When that match timed out, `BruteForceTracker` treated the pattern as **matched** — and "matched" means *this failure is exempt* — so the attempt was not counted, not audited and could never trigger a ban. An unauthenticated attacker who appended a backtracking suffix to every username he tried therefore defeated the module entirely: the harder he attacked, the less was recorded. The same inversion applied when the bounded match executor was saturated (`RejectedExecutionException` returned a completed `MATCHED` future), which a flood of such usernames could cause on its own. Both paths now resolve to **not matched**, so a login failure whose exemption test could not complete is counted like any other.
+
+  **Are you impacted?** Only if you run with `activated=true` *and* have configured at least one non-trivial entry in `ignore_patterns`; the module ships with the feature off and the list empty. Confirm by searching `jahia.log` for `BFLP: ignore-pattern`.
+
+  **Do I need to change anything?** No configuration change is required. Upgrading is enough.
+
+### Changed
+
+- **Behaviour change — a failed exemption test now counts the login failure.** `ignore_patterns` is an *exemption* list, so the safe direction on failure is to withhold the exemption, not to grant it. If a pattern times out, the executor is saturated, or the module is being torn down, the failure is counted instead of ignored. The practical consequence: an operator whose pattern is not linear-time may now see genuinely-ignored accounts counted (and eventually banned) rather than silently skipped. The abort is logged at WARN — `BFLP: ignore-pattern '<p>' abandoned (<cause>, budget 50ms); the login failure is COUNTED, not ignored.` — throttled to one line per minute. If you see it, replace the pattern with a linear-time one.
+- **Usernames longer than 256 characters are no longer tested against `ignore_patterns`** and are therefore never exempted. An over-long username is the vehicle for forcing a regex to backtrack; refusing to run the match at all bounds the work an attacker can push onto the match pool. No real account name approaches this length, and truncating instead of rejecting was rejected as unsafe — it could make a pattern match input the operator never wrote.
+
+## [3.1.2] — 2026-07-09
 
 ### Added
 

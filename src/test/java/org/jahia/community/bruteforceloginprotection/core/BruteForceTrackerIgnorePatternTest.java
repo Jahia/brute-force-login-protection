@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,7 +39,7 @@ import static org.mockito.Mockito.when;
  * Tests for the ignore-pattern matching path in {@link BruteForceTracker#recordEvent}.
  *
  * The tracker is wired with a real ignorePatternExecutor by calling activate() after injection,
- * so the actual regex-matching (including the timeout / fail-closed path) is exercised.
+ * so the actual regex-matching (including the timeout path) is exercised.
  */
 public class BruteForceTrackerIgnorePatternTest {
 
@@ -236,19 +237,18 @@ public class BruteForceTrackerIgnorePatternTest {
     }
 
     // -------------------------------------------------------------------------
-    // 7. Catastrophic-backtracking pattern triggers fail-closed (treated as MATCHED)
-    //    Use a real ReDoS pattern with a long input that will timeout in 50ms.
-    //    We verify the event is silently dropped (fail-closed = treated as a match).
+    // 7. A pattern that exceeds the match budget must NOT exempt the failure.
+    //    Regression test for JAHIA-SEC-362 / GHSA-7qgr-2hqv-r344: the timeout branch
+    //    used to return MATCHED, which means "skip this login failure", so an attacker
+    //    who appended a backtracking suffix to every username was never counted,
+    //    never banned and never audited. A timeout must count the failure instead.
     // -------------------------------------------------------------------------
 
     @Test
     @SuppressWarnings("unchecked")
-    public void catastrophicRegex_failClosed_eventSkipped() throws Exception {
-        // Deterministically exercise the fail-closed contract: when matching a pattern
-        // exceeds the timeout, evaluateIgnorePattern catches TimeoutException and treats
-        // the pattern as MATCHED, so the username is "ignored" and no window entry is
-        // created. Rather than racing a real ReDoS (timing/JIT-dependent), inject a stub
-        // executor whose Future.get(timeout) throws TimeoutException.
+    public void ignorePatternTimeout_stillCountsTheFailure() throws Exception {
+        // Rather than racing a real ReDoS (timing/JIT-dependent), inject a stub executor
+        // whose Future.get(timeout) throws TimeoutException, so the branch is deterministic.
         ExecutorService timingOutExecutor = mock(ExecutorService.class);
         Future<Boolean> timingOutFuture = mock(Future.class);
         when(timingOutFuture.get(anyLong(), any(TimeUnit.class)))
@@ -257,12 +257,105 @@ public class BruteForceTrackerIgnorePatternTest {
         inject(tracker, "ignorePatternExecutor", timingOutExecutor);
 
         when(settingsService.getGlobalSettings()).thenReturn(
-                settingsWithPatterns(Collections.singletonList("(a+)+")));
+                settingsWithPatterns(Collections.singletonList("(.*a){20}")));
         when(settingsService.getJail("login")).thenReturn(loginJail());
 
         tracker.recordEvent(eventFor("10.0.0.7", "aaaaaaaaaab"));
 
-        // Fail-closed: the event was dropped before the window increment.
+        // The exemption test could not complete, so the failure is counted and audited.
+        assertThat(windowsStore).hasSize(1);
+        verify(auditLogger, atLeastOnce()).log(eq(AuditLogger.EVENT_FAILURE),
+                eq("10.0.0.7"), anyString(), anyString(), anyString());
+        // The aborted match is cancelled so the backtracking thread is released.
+        verify(timingOutFuture).cancel(true);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. Same contract on the other abort path: a saturated executor (a flood of
+    //    catastrophic usernames) must not buy the attacker an exemption either.
+    // -------------------------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void ignorePatternExecutorSaturated_stillCountsTheFailure() throws Exception {
+        ExecutorService saturatedExecutor = mock(ExecutorService.class);
+        when(saturatedExecutor.submit(any(Callable.class)))
+                .thenThrow(new RejectedExecutionException("queue full"));
+        inject(tracker, "ignorePatternExecutor", saturatedExecutor);
+
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList("^service-.*")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        tracker.recordEvent(eventFor("10.0.0.8", "service-account"));
+
+        // Even though the username WOULD have matched, the un-run test cannot exempt it.
+        assertThat(windowsStore).hasSize(1);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. A shut-down executor (bundle tear-down) likewise counts rather than exempts.
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void ignorePatternExecutorShutDown_stillCountsTheFailure() throws Exception {
+        ExecutorService deadExecutor = mock(ExecutorService.class);
+        when(deadExecutor.isShutdown()).thenReturn(true);
+        inject(tracker, "ignorePatternExecutor", deadExecutor);
+
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList("^service-.*")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        tracker.recordEvent(eventFor("10.0.0.9", "service-account"));
+
+        assertThat(windowsStore).hasSize(1);
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. An over-long username is never exempted and never reaches the regex engine,
+    //     so it cannot be used to burn the match budget in the first place.
+    // -------------------------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void overLongUsername_isNeverExempted_andNeverMatched() throws Exception {
+        ExecutorService spyExecutor = mock(ExecutorService.class);
+        inject(tracker, "ignorePatternExecutor", spyExecutor);
+
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList(".*")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        String longUsername = repeat("a", 257);
+        tracker.recordEvent(eventFor("10.0.0.10", longUsername));
+
+        // ".*" would match anything, yet the failure is still counted...
+        assertThat(windowsStore).hasSize(1);
+        // ...because the match was never submitted at all.
+        verify(spyExecutor, never()).submit(any(Callable.class));
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. A username exactly at the cap is still matched normally (off-by-one guard).
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void usernameAtLengthCap_isStillMatchedAndExempted() {
+        when(settingsService.getGlobalSettings()).thenReturn(
+                settingsWithPatterns(Collections.singletonList("a{256}")));
+        when(settingsService.getJail("login")).thenReturn(loginJail());
+
+        tracker.recordEvent(eventFor("10.0.0.11", repeat("a", 256)));
+
         assertThat(windowsStore).isEmpty();
+    }
+
+    private static String repeat(String unit, int times) {
+        StringBuilder sb = new StringBuilder(unit.length() * times);
+        for (int i = 0; i < times; i++) {
+            sb.append(unit);
+        }
+        return sb.toString();
     }
 }
