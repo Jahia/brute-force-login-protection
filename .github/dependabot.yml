@@ -47,6 +47,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-redux"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 conflicts with react-i18next peer range (typescript ^5 || ^6).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/tests"
@@ -60,4 +63,6 @@ updates:
       - dependency-name: "cypress"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@jahia/cypress"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
