@@ -70,6 +70,16 @@
   },
   "homepage": "https://github.com/Jahia/brute-force-login-protection#readme",
   "resolutions": {
+    "**/@typescript-eslint/typescript-estree/minimatch": "^11.0.5",
+    "**/istanbul-lib-processinfo/rimraf/glob/minimatch": "^11.0.5",
+    "**/mocha/glob/minimatch": "^11.0.5",
+    "**/mocha/minimatch": "^11.0.5",
+    "**/mochawesome-merge/glob/minimatch": "^11.0.5",
+    "**/nyc/glob/minimatch": "^11.0.5",
+    "**/nyc/rimraf/glob/minimatch": "^11.0.5",
+    "**/spawn-wrap/rimraf/glob/minimatch": "^11.0.5",
+    "**/test-exclude/glob/minimatch": "^11.0.5",
+    "**/test-exclude/minimatch": "^11.0.5",
     "@babel/plugin-transform-modules-systemjs": "^7.29.4",
     "axios": "^1.21.0",
     "baseline-browser-mapping": "^2.11.35",
@@ -77,8 +87,8 @@
     "fast-uri": "^3.1.9",
     "follow-redirects": "^1.16.2",
     "ip-address": "^10.7.6",
-    "qs": "^6.15.2",
-    "serialize-javascript": "^7.0.5",
+    "qs": "^6.16.1",
+    "serialize-javascript": "^7.1.3",
     "systeminformation": "^5.33.19",
     "uuid": "^11.1.1"
   }
