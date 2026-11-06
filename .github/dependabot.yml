@@ -66,3 +66,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Shared libs kept aligned with the module / Jahia GraphQL API.
+      - dependency-name: "@apollo/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "graphql"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "graphql-tag"
+        update-types: ["version-update:semver-major"]
