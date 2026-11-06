@@ -14,7 +14,7 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.60.1",
     "babel-loader": "^10.1.1",
-    "babel-plugin-istanbul": "^6.1.1",
+    "babel-plugin-istanbul": "^8.0.0",
     "compare-versions": "^6.1.1",
     "cross-fetch": "3.1.6",
     "cypress": "15.17.0",
@@ -24,9 +24,9 @@
     "cypress-multi-reporters": "^2.0.5",
     "cypress-terminal-report": "^5.3.7",
     "cypress-wait-until": "^3.0.1",
-    "dotenv": "^10.0.0",
+    "dotenv": "^17.4.2",
     "eslint": "^8.51.0",
-    "eslint-config-prettier": "^8.3.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-chai-friendly": "^0.7.2",
     "eslint-plugin-cypress": "^2.15.1",
     "eslint-plugin-import": "^2.25.2",
@@ -35,7 +35,7 @@
     "eslint-plugin-prettier": "^4.0.0",
     "eslint-plugin-promise": "^6.0.0",
     "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "graphql": "^16.14.0",
     "graphql-tag": "^2.12.6",
     "jahia-reporter": "^0.4.2",
@@ -48,7 +48,7 @@
     "source-map-support": "^0.5.20",
     "supports-color": "^10.0.0",
     "typescript": "^6.0.3",
-    "webpack": "5.104.1"
+    "webpack": "5.108.4"
   },
   "scripts": {
     "e2e:ci": "cypress run",
@@ -71,12 +71,15 @@
   "homepage": "https://github.com/Jahia/brute-force-login-protection#readme",
   "resolutions": {
     "@babel/plugin-transform-modules-systemjs": "^7.29.4",
-    "axios": "^1.16.0",
-    "fast-uri": "^3.1.2",
-    "ip-address": "^10.1.1",
+    "axios": "^1.21.0",
+    "baseline-browser-mapping": "^2.11.35",
+    "browserslist": "^4.29.5",
+    "fast-uri": "^3.1.9",
+    "follow-redirects": "^1.16.2",
+    "ip-address": "^10.7.6",
     "qs": "^6.15.2",
     "serialize-javascript": "^7.0.5",
-    "systeminformation": "^5.31.6",
+    "systeminformation": "^5.33.19",
     "uuid": "^11.1.1"
   }
 }

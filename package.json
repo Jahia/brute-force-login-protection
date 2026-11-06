@@ -35,11 +35,18 @@
   },
   "resolutions": {
     "@babel/plugin-transform-modules-systemjs": "^7.29.4",
-    "fast-uri": "^3.1.2",
-    "ip-address": "^10.1.1",
-    "js-yaml": "^4.1.1",
+    "baseline-browser-mapping": "^2.11.35",
+    "browserslist": "^4.29.5",
+    "fast-uri": "^3.1.9",
+    "immutable": "^5.1.9",
+    "ip-address": "^10.7.6",
+    "js-yaml": "^4.3.2",
     "normalize-package-data": "^7.0.0",
-    "serialize-javascript": "^7.0.5"
+    "postcss": "^8.5.32",
+    "postcss-selector-parser": "^7.1.7",
+    "serialize-javascript": "^7.0.5",
+    "source-map-js": "^1.2.2",
+    "tar": "^7.5.22"
   },
   "devDependencies": {
     "@babel/core": "^7.16.0",
