@@ -16,6 +16,9 @@ updates:
       # The jahia-modules parent and org.jahia.* artifacts define the target
       # Jahia platform version: bumped deliberately, never by Dependabot.
       - dependency-name: "org.jahia.*"
+      # OSGi spec artifacts (e.g. DS annotations 1.5) raise Require-Capability /
+      # Import-Package floors above what Jahia 8.2 provides (Felix SCR 2.1.30 = DS 1.4).
+      - dependency-name: "org.osgi:*"
 
   - package-ecosystem: "npm"
     directory: "/"
@@ -49,6 +52,12 @@ updates:
         update-types: ["version-update:semver-major"]
       # TypeScript 7 conflicts with react-i18next peer range (typescript ^5 || ^6).
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Babel 8 (#120): presets need @babel/core 8 and Node >= 22.18; coordinated migration.
+      - dependency-name: "@babel/*"
+        update-types: ["version-update:semver-major"]
+      # ESLint 10 drops eslintrc support; @jahia/eslint-config 2.x and .eslintrc are eslintrc-based.
+      - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
